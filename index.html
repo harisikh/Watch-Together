@@ -1,0 +1,1261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0E0D12">
+<title>Same Room</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#0E0D12;          /* room lights off */
+    --ink-2:#16151C;
+    --line:#2A2833;
+    --dust:#EDE8E0;         /* projector light */
+    --dust-dim:#9B9689;
+    --amber:#E0A24B;        /* the lamp */
+    --rose:#C97E7A;         /* her */
+    --ok:#7FA37A;
+    --r:10px;
+    --safe-b:env(safe-area-inset-bottom,0px);
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0; background:var(--ink); color:var(--dust);
+    font:15px/1.5 ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif;
+    -webkit-font-smoothing:antialiased;
+    overscroll-behavior:none;
+  }
+  button,input,select{font:inherit;color:inherit}
+  button{cursor:pointer}
+  .serif{font-family:"Instrument Serif",Georgia,serif;font-weight:400}
+
+  /* ---------- entry ---------- */
+  #entry{
+    position:fixed;inset:0;display:grid;place-items:center;padding:24px;
+    background:radial-gradient(120% 80% at 50% -10%,#1B1922 0%,var(--ink) 60%);
+    z-index:50;
+  }
+  .card{width:min(420px,100%)}
+  .title{font-size:44px;line-height:1.05;letter-spacing:-.01em;margin:0 0 6px}
+  .title em{font-style:italic;color:var(--amber)}
+  .sub{color:var(--dust-dim);margin:0 0 28px;font-size:14px}
+  label{display:block;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--dust-dim);margin:0 0 6px}
+  input[type=text]{
+    width:100%;padding:13px 14px;background:var(--ink-2);border:1px solid var(--line);
+    border-radius:var(--r);outline:none;
+  }
+  input[type=text]:focus{border-color:var(--amber);box-shadow:0 0 0 3px rgba(224,162,75,.15)}
+  .row{display:flex;gap:10px;margin-top:14px}
+  .btn{
+    flex:1;padding:13px 16px;border:1px solid var(--line);background:var(--ink-2);
+    border-radius:var(--r);transition:border-color .15s,background .15s,transform .06s;
+    min-height:46px;
+  }
+  .btn:active{transform:translateY(1px)}
+  .btn.primary{background:var(--amber);border-color:var(--amber);color:#1A1206;font-weight:600}
+  @media (hover:hover){ .btn:hover{border-color:#4A4657} .btn.primary:hover{filter:brightness(1.06)} }
+  .hint{margin-top:18px;font-size:12.5px;color:var(--dust-dim);line-height:1.6}
+  .hint b{color:var(--dust);font-weight:600}
+
+  /* ---------- stage ---------- */
+  #stage{position:fixed;inset:0;display:none;flex-direction:column}
+  #screen{
+    position:relative;flex:1;min-height:0;background:#000;
+    display:grid;place-items:center;
+  }
+  #yt,#local-video{position:absolute;inset:0;width:100%;height:100%;border:0}
+  #local-video{background:#000;object-fit:contain}
+  #idle{color:#55525E;font-size:14px;text-align:center;padding:24px}
+
+  /* camera tiles */
+  #cams{
+    position:absolute;inset:0;z-index:5;pointer-events:none;
+  }
+  .cam{
+    position:absolute;width:132px;aspect-ratio:3/4;border-radius:12px;overflow:hidden;
+    background:#101017;border:1px solid var(--line);
+    box-shadow:0 12px 30px -12px rgba(0,0,0,.8);
+    touch-action:none;user-select:none;-webkit-user-select:none;
+    pointer-events:auto;cursor:grab;
+  }
+  .cam:active{cursor:grabbing}
+  .cam:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+  .cam video{width:100%;height:100%;object-fit:cover;display:block;pointer-events:none}
+  .cam.me video{transform:scaleX(-1)}
+  .cam .tag{
+    position:absolute;left:7px;bottom:6px;font-size:10.5px;letter-spacing:.06em;
+    text-transform:uppercase;color:#D9D4CB;text-shadow:0 1px 3px #000;
+  }
+  .cam .resize{
+    position:absolute;right:0;bottom:0;width:22px;height:22px;
+    cursor:se-resize;touch-action:none;
+    background:linear-gradient(135deg,transparent 50%,rgba(237,232,224,.4) 50%);
+    border-radius:0 0 12px 0;
+  }
+  @media (hover:hover){ .cam .resize:hover{background:linear-gradient(135deg,transparent 50%,rgba(237,232,224,.6) 50%)} }
+  .cam.speaking{border-color:var(--amber)}
+  /* the overlay is decoration only: it must never swallow the drag or resize pointer */
+  .cam.off::after{content:"camera off";position:absolute;inset:0;display:grid;place-items:center;font-size:11px;color:#6B6875;pointer-events:none}
+  @media (max-width:520px){ .cam{width:96px} }
+
+  /* controls */
+  #bar{
+    display:flex;align-items:center;gap:8px;padding:10px 12px calc(10px + var(--safe-b));
+    background:var(--ink-2);border-top:1px solid var(--line);flex-wrap:wrap;
+  }
+  .ctl{
+    display:inline-flex;align-items:center;justify-content:center;gap:7px;
+    min-width:44px;min-height:44px;padding:0 13px;border:1px solid var(--line);
+    background:transparent;border-radius:var(--r);font-size:13.5px;
+  }
+  .ctl[aria-pressed="true"]{border-color:var(--amber);color:var(--amber)}
+  .ctl.danger{border-color:#5C3033;color:#D98A86}
+  @media (hover:hover){ .ctl:hover{border-color:#4A4657} }
+  #status{margin-left:auto;font-size:12.5px;color:var(--dust-dim);display:flex;align-items:center;gap:7px}
+  .dot{width:7px;height:7px;border-radius:50%;background:#5A5766}
+  .dot.live{background:var(--ok)}
+  .dot.wait{background:var(--amber)}
+  .ctl.subtle{opacity:.6;font-size:12px;padding:0 10px}
+  @media (hover:hover){ .ctl.subtle:hover{opacity:.9} }
+  #srcbar{display:flex;gap:8px;padding:10px 12px;border-top:1px solid var(--line);flex-wrap:wrap}
+  #srcbar input[type=text]{flex:1;min-width:180px}
+  .file-btn{position:relative;overflow:hidden}
+  .file-btn input{position:absolute;inset:0;opacity:0;cursor:pointer}
+
+  #toast{
+    position:fixed;left:50%;bottom:calc(84px + var(--safe-b));transform:translateX(-50%);
+    background:#22202B;border:1px solid var(--line);padding:10px 14px;border-radius:99px;
+    font-size:13px;opacity:0;pointer-events:none;transition:opacity .3s;z-index:20;
+    max-width:calc(100vw - 32px);text-align:center;
+  }
+  #toast.show{opacity:1}
+  #gate{
+    position:absolute;inset:0;display:none;place-items:center;background:rgba(8,8,11,.82);z-index:8;
+  }
+  #gate button{padding:16px 26px;border-radius:99px;border:1px solid var(--amber);background:var(--amber);color:#1A1206;font-weight:600}
+
+  /* keyboard users need to see where they are */
+  .ctl:focus-visible,.btn:focus-visible,#gate button:focus-visible,.file-btn:focus-within{
+    outline:2px solid var(--amber);outline-offset:2px;
+  }
+
+  /* ---------- fullscreen ----------
+     Fullscreen is always requested on #screen, the whole stage, never on the
+     YouTube iframe. The camera tiles live inside #screen, so they come along
+     and stay visible, draggable and resizable on top of the film.
+     Two routes in, one look:
+       native : the real Fullscreen API (desktop Chrome, desktop Safari, iPad)
+       css    : a fixed overlay, for iPhone Safari, which refuses fullscreen
+                on anything that is not a <video> */
+  #screen:fullscreen{width:100%;height:100%;background:#000}
+  #screen:-webkit-full-screen{width:100%;height:100%;background:#000}
+  body.fs-css #screen{position:fixed;inset:0;z-index:40}
+
+  /* the bottom bar rides inside #screen while fullscreen, so it floats over
+     the film instead of sitting under it. The source bar steps aside. */
+  body.fs-on #srcbar{display:none}
+  body.fs-on #bar{
+    position:absolute;left:0;right:0;bottom:0;z-index:6;border-top:0;
+    background:linear-gradient(to top,rgba(14,13,18,.94),rgba(14,13,18,.78) 55%,rgba(14,13,18,0));
+    transition:opacity .28s ease;
+  }
+  body.fs-on.fs-idle #bar{opacity:0;pointer-events:none}
+  body.fs-on.fs-idle #screen,body.fs-on.fs-idle #screen *{cursor:none}
+  /* The tiles are deliberately absent from every rule above: the faces never
+     fade, that is the whole point of this mode.
+     They also sit above the bar here, not below it. On a phone the bar wraps
+     onto two or three rows and would otherwise trap a face parked near the
+     bottom. This way round nothing is ever stuck: a face covering a button can
+     always be dragged off it. */
+  body.fs-on #cams{z-index:7}
+
+  /* A cross origin iframe swallows pointer events, so once the controls have
+     faded there is nothing left to notice a mouse move. This pane sits over
+     the film, but only while the controls are hidden, purely so that any move
+     or tap brings them back. It is below #cams, so tiles stay draggable. */
+  #fs-wake{display:none}
+  body.fs-on #fs-wake{display:block;position:absolute;inset:0;z-index:4;pointer-events:none}
+  body.fs-on.fs-idle #fs-wake{pointer-events:auto}
+
+  /* ---------- count us in ----------
+     Lives inside #screen, so it comes along into native fullscreen and shows
+     over the CSS fallback too. Never takes pointer events: it is a sign, not
+     a door. */
+  #countdown{
+    position:absolute;inset:0;z-index:9;display:none;place-items:center;
+    background:rgba(8,8,11,.62);pointer-events:none;
+  }
+  #countdown.show{display:grid}
+  #count-num{
+    font-size:min(30vh,26vw);line-height:1;color:var(--dust);
+    text-shadow:0 8px 50px rgba(0,0,0,.9);animation:count-pop .26s ease-out;
+  }
+  @keyframes count-pop{ from{transform:scale(.82);opacity:0} to{transform:scale(1);opacity:1} }
+
+  /* shown in the page while the faces are away in their own window */
+  #pip-away{
+    position:absolute;left:50%;top:12px;transform:translateX(-50%);z-index:6;
+    display:none;padding:7px 13px;border-radius:99px;font-size:12.5px;
+    background:rgba(34,32,43,.9);border:1px solid var(--line);color:var(--dust-dim);
+    pointer-events:none;white-space:nowrap;
+  }
+  body.pip-on #pip-away{display:block}
+
+  #pip-note{font-size:12.5px;color:var(--dust-dim);flex-basis:100%;margin:2px 0 0}
+  .ctl:disabled{opacity:.4;cursor:default}
+  @media (hover:hover){ .ctl:disabled:hover{border-color:var(--line)} }
+
+  /* ---------- help ---------- */
+  #help{
+    border-top:1px solid var(--line);padding:0 12px;font-size:13.5px;color:var(--dust-dim);
+  }
+  #help>summary{
+    list-style:none;cursor:pointer;padding:11px 0;color:var(--dust);
+    display:flex;align-items:center;gap:8px;min-height:44px;
+  }
+  #help>summary::-webkit-details-marker{display:none}
+  #help>summary::before{content:"+";color:var(--amber);font-size:15px;line-height:1}
+  #help[open]>summary::before{content:"–"}
+  #help>summary:focus-visible{outline:2px solid var(--amber);outline-offset:2px;border-radius:6px}
+  #help ol{margin:0 0 10px;padding-left:20px;line-height:1.75}
+  #help li b{color:var(--dust);font-weight:600}
+  #help p{margin:0 0 14px;line-height:1.65}
+  body.fs-on #help{display:none}
+
+  @media (prefers-reduced-motion:reduce){ *{transition:none!important;animation:none!important} }
+</style>
+</head>
+<body>
+
+<!-- ENTRY -->
+<div id="entry">
+  <div class="card">
+    <h1 class="title serif">Same <em>room</em></h1>
+    <p class="sub">Watch together from two places. Your faces come over the call, and the film plays on both screens at once.</p>
+
+    <label for="room">Room name</label>
+    <input id="room" type="text" placeholder="something only you two would guess" autocomplete="off" spellcheck="false">
+
+    <div class="row">
+      <button class="btn primary" id="btn-open">Open the room</button>
+      <button class="btn" id="btn-join">Join</button>
+    </div>
+
+    <p class="hint">
+      One of you opens the room, the other joins with the same name.
+      <b>Wear headphones</b>, otherwise each mic picks up the film and it echoes.
+    </p>
+  </div>
+</div>
+
+<!-- STAGE -->
+<div id="stage">
+  <div id="screen">
+    <div id="idle">Paste a YouTube link below, or load the same movie file on both sides.</div>
+    <div id="yt"></div>
+    <video id="local-video" playsinline webkit-playsinline controls style="display:none"></video>
+    <div id="gate"><button id="gate-btn">Tap to start playback</button></div>
+    <div id="fs-wake" aria-hidden="true"></div>
+    <div id="countdown" role="status" aria-live="assertive"><div id="count-num" class="serif"></div></div>
+    <div id="pip-away">Faces are floating in their own window.</div>
+
+    <div id="cams">
+      <div class="cam me" id="cam-me" tabindex="0"><video id="v-me" playsinline webkit-playsinline autoplay muted></video><span class="tag">you</span><span class="resize" data-resize></span></div>
+      <div class="cam" id="cam-them" tabindex="0"><video id="v-them" playsinline webkit-playsinline autoplay></video><span class="tag">them</span><span class="resize" data-resize></span></div>
+    </div>
+  </div>
+
+  <div id="srcbar">
+    <input id="url" type="text" placeholder="YouTube link" autocomplete="off" spellcheck="false">
+    <button class="ctl" id="btn-load">Play this</button>
+    <button class="ctl file-btn">Load movie file<input id="file" type="file" accept="video/*"></button>
+  </div>
+
+  <details id="help">
+    <summary>Watching Netflix together</summary>
+    <ol>
+      <li>Open Netflix in another window, on the same title, both of you.</li>
+      <li>Come back here and press <b>Pop out faces</b>. Your two faces lift off the page into a small window that stays on top of everything else.</li>
+      <li>Drag that little window wherever you want it, then click back onto Netflix.</li>
+      <li>Press <b>Count us in</b>. You will both see 3, 2, 1, then the word Play. Press play on Netflix the moment it lands.</li>
+    </ol>
+    <p>Netflix cannot play inside this app. Its copy protection blocks any other site from showing it, so the film has to run in its own window and only the countdown keeps you together. The same is true of Prime, Disney+ and the rest.</p>
+  </details>
+
+  <div id="bar">
+    <button class="ctl" id="btn-mic" aria-pressed="false">Mic on</button>
+    <button class="ctl" id="btn-cam" aria-pressed="false">Camera on</button>
+    <button class="ctl" id="btn-duck" aria-pressed="true">Duck film when talking</button>
+    <button class="ctl" id="btn-fs" aria-pressed="false">Fullscreen</button>
+    <button class="ctl" id="btn-pip" aria-pressed="false">Pop out faces</button>
+    <button class="ctl" id="btn-count">Count us in</button>
+    <button class="ctl" id="btn-sync">Resync</button>
+    <button class="ctl subtle" id="btn-tick" aria-pressed="true">Tick on</button>
+    <button class="ctl subtle" id="btn-reset-faces">Reset faces</button>
+    <button class="ctl danger" id="btn-leave">Leave</button>
+    <span id="status"><span class="dot" id="dot"></span><span id="status-text">connecting…</span></span>
+    <p id="pip-note" hidden></p>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script>
+/* ============================================================
+   Same Room — WebRTC call + synchronised playback.
+   The film is NEVER streamed between you: each side plays its own
+   copy (YouTube, or the same local file) and only tiny play/pause/
+   seek messages travel over the data channel. That's why there's
+   no lag no matter how far apart you are.
+   ============================================================ */
+
+const $ = s => document.querySelector(s);
+const PREFIX = 'sameroom-';            // namespaces ids on the public broker
+const DRIFT  = 0.75;                   // seconds of drift before we correct
+const state = {
+  peer:null, conn:null, mediaCall:null, isHost:false, room:'',
+  stream:null, mode:null,               // 'yt' | 'file'
+  yt:null, ytReady:false, pendingLoad:null,
+  applyingRemote:false, duck:true, baseVolume:1,
+  heartbeat:null, driftTimer:null,
+  tiles:null, screenBox:null,
+  fs:null, fsIdleTimer:null,       // fs: null | 'native' | 'css'
+  remoteStream:null,
+  counting:false, countTimer:null, tick:true, actx:null
+};
+
+/* Held once rather than looked up each time. The two camera tiles physically
+   move into the floating window when it opens, and while they are over there
+   this document can no longer find them by selector. */
+const camMe = $('#cam-me'), camThem = $('#cam-them');
+const vMe   = $('#v-me'),   vThem   = $('#v-them');
+const btnMic = $('#btn-mic'), btnCam = $('#btn-cam');
+
+/* The floating window and the controls we build inside it. Declared up here
+   because syncMediaButtons() reaches into it. mode: null | 'doc' | 'video' | 'ios' */
+const pip = { win:null, mode:null, btnMic:null, btnCam:null, btnCount:null, box:null, num:null };
+
+/* ---------- small helpers ---------- */
+function toast(msg, ms=2600){
+  const t=$('#toast'); t.textContent=msg; t.classList.add('show');
+  clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove('show'), ms);
+}
+function setStatus(text, cls){
+  $('#status-text').textContent = text;
+  $('#dot').className = 'dot' + (cls ? ' '+cls : '');
+}
+function send(msg){
+  if(state.conn && state.conn.open){ try{ state.conn.send(msg); }catch(e){} }
+}
+function youtubeId(url){
+  if(!url) return null;
+  const s = url.trim();
+  if(/^[\w-]{11}$/.test(s)) return s;
+  const m = s.match(/(?:youtu\.be\/|v=|\/embed\/|\/shorts\/)([\w-]{11})/);
+  return m ? m[1] : null;
+}
+
+/* ---------- playback abstraction (YouTube or local file) ---------- */
+const player = {
+  time(){
+    if(state.mode==='yt' && state.yt && state.yt.getCurrentTime) return state.yt.getCurrentTime()||0;
+    if(state.mode==='file') return $('#local-video').currentTime||0;
+    return 0;
+  },
+  playing(){
+    if(state.mode==='yt' && state.yt && state.yt.getPlayerState) return state.yt.getPlayerState()===1;
+    if(state.mode==='file') return !$('#local-video').paused;
+    return false;
+  },
+  play(){
+    if(state.mode==='yt' && state.yt) state.yt.playVideo();
+    if(state.mode==='file'){ const p=$('#local-video').play(); if(p&&p.catch) p.catch(()=>showGate()); }
+  },
+  pause(){
+    if(state.mode==='yt' && state.yt) state.yt.pauseVideo();
+    if(state.mode==='file') $('#local-video').pause();
+  },
+  seek(t){
+    if(state.mode==='yt' && state.yt) state.yt.seekTo(t, true);
+    if(state.mode==='file') $('#local-video').currentTime = t;
+  },
+  volume(v){ // 0..1
+    if(state.mode==='yt' && state.yt && state.yt.setVolume) state.yt.setVolume(Math.round(v*100));
+    if(state.mode==='file') $('#local-video').volume = v;
+  }
+};
+
+function showGate(){ $('#gate').style.display='grid'; }
+$('#gate-btn').addEventListener('click', ()=>{ $('#gate').style.display='none'; player.play(); });
+
+/* ---------- YouTube iframe API ---------- */
+const ytTag = document.createElement('script');
+ytTag.src = 'https://www.youtube.com/iframe_api';
+document.head.appendChild(ytTag);
+
+window.onYouTubeIframeAPIReady = () => {
+  state.yt = new YT.Player('yt', {
+    height:'100%', width:'100%',
+    playerVars:{ playsinline:1, rel:0, modestbranding:1, controls:1 },
+    events:{
+      onReady: () => {
+        state.ytReady = true;
+        if(state.pendingLoad){ const id=state.pendingLoad; state.pendingLoad=null; loadYouTube(id, true); }
+      },
+      onStateChange: e => {
+        if(state.applyingRemote || state.mode!=='yt') return;
+        if(e.data===YT.PlayerState.PLAYING || e.data===YT.PlayerState.PAUSED) broadcastState();
+      }
+    }
+  });
+};
+
+function loadYouTube(id, local){
+  state.mode = 'yt';
+  $('#idle').style.display='none';
+  $('#local-video').style.display='none';
+  $('#local-video').pause();
+  if(!state.ytReady){ state.pendingLoad = id; return; }
+  document.getElementById('yt').style.display='block';
+  state.applyingRemote = true;
+  state.yt.loadVideoById(id);
+  setTimeout(()=>{ state.applyingRemote=false; }, 900);
+  if(local) send({t:'load', kind:'yt', id});
+}
+
+/* ---------- local file ---------- */
+$('#file').addEventListener('change', e => {
+  const f = e.target.files && e.target.files[0];
+  if(!f) return;
+  const v = $('#local-video');
+  v.src = URL.createObjectURL(f);
+  v.style.display='block';
+  document.getElementById('yt').style.display='none';
+  $('#idle').style.display='none';
+  state.mode='file';
+  toast('Loaded. Make sure they load the same file on their side.');
+  send({t:'load', kind:'file', name:f.name});
+});
+
+['play','pause','seeked'].forEach(evt =>
+  $('#local-video').addEventListener(evt, () => {
+    if(state.applyingRemote || state.mode!=='file') return;
+    broadcastState();
+  })
+);
+
+/* ---------- sync protocol ---------- */
+function broadcastState(){
+  send({ t:'state', playing:player.playing(), time:player.time(), at:Date.now() });
+}
+function applyState(m){
+  if(!state.mode) return;
+  const latency = Math.max(0,(Date.now()-m.at))/1000;
+  const target  = m.playing ? m.time + latency : m.time;
+  state.applyingRemote = true;
+  if(Math.abs(player.time()-target) > DRIFT) player.seek(target);
+  if(m.playing && !player.playing()) player.play();
+  if(!m.playing && player.playing()) player.pause();
+  setTimeout(()=>{ state.applyingRemote=false; }, 700);
+}
+
+function startTimers(){
+  clearInterval(state.heartbeat);
+  state.heartbeat = setInterval(()=>{ if(state.mode && player.playing()) broadcastState(); }, 4000);
+}
+
+/* ---------- data messages ---------- */
+function wireConn(conn){
+  state.conn = conn;
+  conn.on('open', ()=>{
+    setStatus('connected', 'live');
+    toast('Connected.');
+    startTimers();
+    if(state.mode) { broadcastState(); }
+  });
+  conn.on('data', m => {
+    if(!m || !m.t) return;
+    if(m.t==='load'){
+      if(m.kind==='yt'){ loadYouTube(m.id, false); toast('They started a video.'); }
+      else toast('They loaded: ' + (m.name||'a file') + '. Open your copy.');
+    }
+    else if(m.t==='state') applyState(m);
+    else if(m.t==='countin') runCountIn();
+    else if(m.t==='hello') broadcastState();
+  });
+  conn.on('close', ()=>{ setStatus('they left', 'wait'); });
+  conn.on('error', ()=>{ setStatus('connection error', 'wait'); });
+}
+
+/* ---------- media ---------- */
+async function getMedia(){
+  try{
+    state.stream = await navigator.mediaDevices.getUserMedia({
+      video:{ width:{ideal:640}, height:{ideal:480}, facingMode:'user' },
+      audio:{ echoCancellation:true, noiseSuppression:true, autoGainControl:true }
+    });
+  }catch(err){
+    toast('No camera or mic, but you can still watch together.');
+    state.stream = null;
+    syncMediaButtons();
+    return;
+  }
+  vMe.srcObject = state.stream;
+  syncMediaButtons();
+  listenForSpeech();
+}
+
+function wireCall(call){
+  state.mediaCall = call;
+  call.on('stream', remote => {
+    state.remoteStream = remote;
+    if(vThem.srcObject !== remote){
+      vThem.srcObject = remote;
+      const p = vThem.play(); if(p && p.catch) p.catch(()=>{});
+    }
+  });
+  call.on('close', ()=> { state.remoteStream = null; vThem.srcObject = null; });
+}
+
+/* One truth for the mic and camera, because the same two toggles exist twice
+   once the floating window is open: here in the bar, and over there. */
+function trackOf(kind){
+  if(!state.stream) return null;
+  const list = kind==='audio' ? state.stream.getAudioTracks() : state.stream.getVideoTracks();
+  return list[0] || null;
+}
+function setPressed(btn, on, label){
+  if(!btn) return;
+  btn.setAttribute('aria-pressed', String(on));
+  btn.textContent = label;
+}
+function syncMediaButtons(){
+  const a = trackOf('audio'), v = trackOf('video');
+  const micOn = !!(a && a.enabled), camOn = !!(v && v.enabled);
+  setPressed(btnMic, micOn, micOn ? 'Mic on' : 'Mic off');
+  setPressed(btnCam, camOn, camOn ? 'Camera on' : 'Camera off');
+  setPressed(pip.btnMic, micOn, micOn ? 'Mic on' : 'Mic off');
+  setPressed(pip.btnCam, camOn, camOn ? 'Camera on' : 'Camera off');
+  camMe.classList.toggle('off', !camOn);
+}
+function toggleTrack(kind){
+  const t = trackOf(kind);
+  if(!t) return;
+  t.enabled = !t.enabled;
+  syncMediaButtons();
+}
+
+/* ducking: drop film volume while you're actually talking */
+function listenForSpeech(){
+  if(!state.stream) return;
+  const track = state.stream.getAudioTracks()[0];
+  if(!track) return;
+  let ctx;
+  try{ ctx = new (window.AudioContext||window.webkitAudioContext)(); }catch(e){ return; }
+  const src = ctx.createMediaStreamSource(new MediaStream([track]));
+  const an  = ctx.createAnalyser(); an.fftSize = 512;
+  src.connect(an);
+  const buf = new Uint8Array(an.frequencyBinCount);
+  let quietSince = 0, ducked = false;
+
+  const resume = ()=>{ if(ctx.state==='suspended') ctx.resume(); };
+  document.addEventListener('visibilitychange', resume);
+  document.addEventListener('pointerdown', resume, {passive:true});
+
+  (function loop(){
+    an.getByteFrequencyData(buf);
+    let sum=0; for(let i=0;i<buf.length;i++) sum+=buf[i];
+    const level = sum/buf.length;
+    const talking = level > 22 && !track.muted && track.enabled;
+    camMe.classList.toggle('speaking', talking);
+
+    if(state.duck && state.mode){
+      if(talking){ quietSince = Date.now(); if(!ducked){ ducked=true; player.volume(0.25); } }
+      else if(ducked && Date.now()-quietSince > 1200){ ducked=false; player.volume(state.baseVolume); }
+    }
+    requestAnimationFrame(loop);
+  })();
+}
+
+/* ---------- camera tile drag & resize ---------- */
+const TILE_STORAGE_KEY = 'sameroom-tiles';
+const TILE_MOBILE_BQ   = 520;
+const TILE_MIN_DESKTOP = 132;
+const TILE_MIN_MOBILE  = 96;
+const TILE_MARGIN      = 12;   // matches the old right/bottom pin
+const TILE_GAP         = 8;    // gap between the two default-stacked tiles
+const TILE_VISIBLE_MIN = 40;   // px of a tile that must always stay on screen
+
+function screenSize(){
+  const r = $('#screen').getBoundingClientRect();
+  return { w:r.width, h:r.height };
+}
+
+function tileMinWidth(){ return window.innerWidth < TILE_MOBILE_BQ ? TILE_MIN_MOBILE : TILE_MIN_DESKTOP; }
+function tileMaxWidth(){ return window.innerWidth * 0.45; }
+function tileHeightFor(w){ return w * 4 / 3; }
+
+function defaultTileRects(){
+  const rect = $('#screen').getBoundingClientRect();
+  const w = tileMinWidth();
+  const h = tileHeightFor(w);
+  const themX = rect.width  - TILE_MARGIN - w;
+  const themY = rect.height - TILE_MARGIN - h;
+  return {
+    them: { x:themX, y:themY, w },
+    me:   { x:themX, y:themY - TILE_GAP - h, w }
+  };
+}
+
+function clampTileRect(rect){
+  const screen = $('#screen').getBoundingClientRect();
+  const minW = tileMinWidth();
+  const maxW = Math.max(minW, tileMaxWidth());
+  const w = Math.min(Math.max(rect.w, minW), maxW);
+  const h = tileHeightFor(w);
+  const minX = -(w - TILE_VISIBLE_MIN), maxX = screen.width  - TILE_VISIBLE_MIN;
+  const minY = -(h - TILE_VISIBLE_MIN), maxY = screen.height - TILE_VISIBLE_MIN;
+  return {
+    x: Math.min(Math.max(rect.x, minX), maxX),
+    y: Math.min(Math.max(rect.y, minY), maxY),
+    w
+  };
+}
+
+function applyTileRect(el, rect){
+  el.style.left  = rect.x + 'px';
+  el.style.top   = rect.y + 'px';
+  el.style.width = rect.w + 'px';
+}
+
+function saveTiles(){
+  try{ localStorage.setItem(TILE_STORAGE_KEY, JSON.stringify(state.tiles)); }catch(e){}
+}
+
+function loadTiles(){
+  let saved = null;
+  try{ saved = JSON.parse(localStorage.getItem(TILE_STORAGE_KEY)); }catch(e){}
+  const d = defaultTileRects();
+  return {
+    me:   clampTileRect(saved && saved.me   ? saved.me   : d.me),
+    them: clampTileRect(saved && saved.them ? saved.them : d.them)
+  };
+}
+
+/* While the tiles are away in the floating window they lay themselves out with
+   flexbox over there, so writing left/top/width onto them would wreck it. The
+   positions are still tracked, and land back on them when they come home. */
+function renderTiles(){
+  if(pip.mode === 'doc') return;
+  applyTileRect(camMe,   state.tiles.me);
+  applyTileRect(camThem, state.tiles.them);
+}
+
+function initTiles(){
+  state.tiles = loadTiles();
+  state.screenBox = screenSize();
+  renderTiles();
+}
+
+function resetTiles(){
+  const d = defaultTileRects();
+  state.tiles = { me: clampTileRect(d.me), them: clampTileRect(d.them) };
+  state.screenBox = screenSize();
+  renderTiles();
+  saveTiles();
+  toast('Faces reset.');
+}
+
+/* When #screen changes size, a tile keeps its distance from whichever edges it
+   was already nearest. A face parked in the bottom right corner stays in the
+   bottom right corner, and because only edge distances are kept, going into
+   fullscreen and back out lands it on the exact pixel it started from. */
+function remapTileRect(rect, from, to){
+  const h = tileHeightFor(rect.w);
+  const right  = from.w - (rect.x + rect.w);
+  const bottom = from.h - (rect.y + h);
+  return {
+    x: right  < rect.x ? to.w - right  - rect.w : rect.x,
+    y: bottom < rect.y ? to.h - bottom - h      : rect.y,
+    w: rect.w
+  };
+}
+
+/* Re-home the tiles after any size change: window resize, rotation, or
+   entering and leaving fullscreen. Safe to call repeatedly, once the screen
+   has settled it only clamps. */
+function reflowTiles(){
+  if(!state.tiles) return;
+  const to = screenSize();
+  if(!to.w || !to.h) return;           // mid transition, a later call will catch it
+  const from = state.screenBox;
+  const moved = from && from.w && from.h && (from.w !== to.w || from.h !== to.h);
+  for(const key of ['me','them']){
+    const rect = moved ? remapTileRect(state.tiles[key], from, to) : state.tiles[key];
+    state.tiles[key] = clampTileRect(rect);
+  }
+  state.screenBox = to;
+  renderTiles();
+  saveTiles();
+}
+
+window.addEventListener('resize', reflowTiles);
+window.addEventListener('orientationchange', reflowTiles);
+
+/* One gesture per tile, so a drag and a resize can never fight over the same
+   tile. The two tiles keep their own state, so both can be moved at once with
+   two fingers. Events from the resize handle bubble up to the tile, and pointer
+   capture keeps them coming even when the finger slides off the handle, so all
+   the movement listeners live on the tile itself. */
+function wireTile(el, key){
+  const handle = el.querySelector('[data-resize]');
+  let mode = null;                       // null | 'drag' | 'resize'
+  let pid = null, startX = 0, startY = 0, startRect = null;
+
+  function begin(kind, e, target){
+    if(mode || !state.tiles) return;
+    /* These listeners travel with the tile into the floating window, where
+       there is no #screen to measure against and nothing to drag around. */
+    if(pip.mode === 'doc') return;
+    mode = kind; pid = e.pointerId;
+    startX = e.clientX; startY = e.clientY;
+    startRect = Object.assign({}, state.tiles[key]);
+    /* Safari can refuse capture for a pointer it has already released. */
+    try{ target.setPointerCapture(e.pointerId); }catch(err){}
+  }
+
+  function end(e){
+    if(mode === null) return;
+    if(e && e.pointerId !== pid) return;
+    mode = null; pid = null;
+    saveTiles();
+  }
+
+  function move(e){
+    if(mode === null || e.pointerId !== pid) return;
+    /* If a pointerup went missing (dragged outside the window, focus stolen),
+       the button is already up: finish rather than stick to the cursor. */
+    if(e.pointerType === 'mouse' && e.buttons === 0){ end(e); return; }
+    const dx = e.clientX - startX, dy = e.clientY - startY;
+    const rect = clampTileRect(mode === 'resize'
+      ? { x:startRect.x, y:startRect.y, w:startRect.w + dx }
+      : { x:startRect.x + dx, y:startRect.y + dy, w:startRect.w });
+    state.tiles[key] = rect;
+    applyTileRect(el, rect);
+  }
+
+  handle.addEventListener('pointerdown', e => { e.stopPropagation(); begin('resize', e, handle); });
+  el.addEventListener('pointerdown', e => {
+    if(e.target.closest('[data-resize]')) return;
+    begin('drag', e, el);
+  });
+
+  el.addEventListener('pointermove', move);
+  el.addEventListener('pointerup', end);
+  el.addEventListener('pointercancel', end);
+  el.addEventListener('lostpointercapture', end);
+}
+
+wireTile(camMe, 'me');
+wireTile(camThem, 'them');
+$('#btn-reset-faces').onclick = resetTiles;
+
+/* ---------- fullscreen ----------
+   We ask for fullscreen on #screen, the container, never on the YouTube
+   iframe. That is the whole trick: the tiles are children of #screen, so they
+   ride along and stay on top of the film. iPhone Safari will only put a
+   <video> into real fullscreen, so there we fall back to a fixed overlay that
+   behaves the same way. */
+const FS_IDLE_MS = 3000;
+const fsHome = { parent:null, next:null, toastParent:null, toastNext:null };
+
+function nativeFullscreenSupported(){
+  const el = $('#screen');
+  if(!el.requestFullscreen && !el.webkitRequestFullscreen) return false;
+  /* iPhone Safari answers false here, desktop Safari and iPad answer true */
+  if(document.fullscreenEnabled === false) return false;
+  if(document.webkitFullscreenEnabled === false) return false;
+  return true;
+}
+function currentFullscreenElement(){
+  return document.fullscreenElement || document.webkitFullscreenElement || null;
+}
+
+/* The bar and the toast are moved inside #screen for the duration, otherwise
+   native fullscreen would leave them behind with the rest of the page. Moving
+   a node keeps its listeners, so every button carries on working. */
+function mountFsChrome(){
+  const scr = $('#screen'), bar = $('#bar'), t = $('#toast');
+  if(bar.parentNode === scr) return;
+  fsHome.parent = bar.parentNode;   fsHome.next = bar.nextSibling;
+  fsHome.toastParent = t.parentNode; fsHome.toastNext = t.nextSibling;
+  scr.appendChild(bar);
+  scr.appendChild(t);
+}
+function unmountFsChrome(){
+  if(!fsHome.parent) return;
+  fsHome.parent.insertBefore($('#bar'), fsHome.next);
+  fsHome.toastParent.insertBefore($('#toast'), fsHome.toastNext);
+  fsHome.parent = null;
+}
+
+function updateFsButton(){
+  const b = $('#btn-fs'), on = !!state.fs;
+  b.textContent = on ? 'Exit fullscreen' : 'Fullscreen';
+  b.setAttribute('aria-pressed', String(on));
+  b.title = on ? 'Leave fullscreen, or press Escape' : 'Fill the screen, faces stay on top';
+}
+
+function wakeControls(){
+  clearTimeout(state.fsIdleTimer);
+  document.body.classList.remove('fs-idle');
+  if(!state.fs) return;
+  state.fsIdleTimer = setTimeout(()=>{
+    if(!state.fs) return;
+    /* never hide the controls from under someone tabbing through them */
+    if($('#bar').contains(document.activeElement)){ wakeControls(); return; }
+    document.body.classList.add('fs-idle');
+  }, FS_IDLE_MS);
+}
+
+function setFullscreen(mode){                 // null | 'native' | 'css'
+  if(state.fs === mode) return;
+  state.fs = mode;
+  if(mode){
+    mountFsChrome();
+    document.body.classList.add('fs-on');
+    document.body.classList.toggle('fs-css', mode === 'css');
+  }else{
+    document.body.classList.remove('fs-on','fs-css');
+    unmountFsChrome();
+  }
+  updateFsButton();
+  wakeControls();
+  /* CSS mode fires no resize event, and desktop fullscreen animates open over
+     about a second, so re-home the faces now and again once it has settled */
+  reflowTiles();
+  requestAnimationFrame(reflowTiles);
+  setTimeout(reflowTiles, 300);
+}
+
+function enterFullscreen(){
+  if(state.fs) return;
+  const el = $('#screen');
+  if(!nativeFullscreenSupported()){ setFullscreen('css'); return; }
+  let p = null;
+  try{
+    p = el.requestFullscreen ? el.requestFullscreen({navigationUI:'hide'})
+                             : el.webkitRequestFullscreen();
+  }catch(err){ p = null; }
+  if(p && p.catch) p.catch(()=>{ if(!state.fs) setFullscreen('css'); });
+  /* the old webkit call returns nothing, so if it quietly did nothing, fall back */
+  setTimeout(()=>{ if(!state.fs && !currentFullscreenElement()) setFullscreen('css'); }, 800);
+}
+
+function exitFullscreen(){
+  if(state.fs === 'css'){ setFullscreen(null); return; }
+  if(state.fs !== 'native') return;
+  const ex = document.exitFullscreen || document.webkitExitFullscreen;
+  if(!ex){ setFullscreen(null); return; }
+  let p = null;
+  try{ p = ex.call(document); }catch(err){ p = null; }
+  if(p && p.catch) p.catch(()=>setFullscreen(null));
+  setTimeout(()=>{ if(!currentFullscreenElement()) setFullscreen(null); }, 500);
+}
+
+function toggleFullscreen(){ state.fs ? exitFullscreen() : enterFullscreen(); }
+
+/* Covers our own button, the Escape key and the browser's own gesture: they
+   all end up here, so leaving always restores the normal layout. */
+function onFullscreenChange(){
+  if(currentFullscreenElement() === $('#screen')) setFullscreen('native');
+  else if(state.fs === 'native') setFullscreen(null);
+  else reflowTiles();
+}
+['fullscreenchange','webkitfullscreenchange'].forEach(e =>
+  document.addEventListener(e, onFullscreenChange));
+['fullscreenerror','webkitfullscreenerror'].forEach(e =>
+  document.addEventListener(e, ()=>{ if(!state.fs) setFullscreen('css'); }));
+
+['pointerdown','pointermove','pointerup','touchstart','wheel','keydown','focusin'].forEach(evt =>
+  document.addEventListener(evt, ()=>{ if(state.fs) wakeControls(); }, {passive:true}));
+
+document.addEventListener('keydown', e => {
+  if(e.key !== 'Escape' || !state.fs) return;
+  /* Browsers handle Escape themselves in real fullscreen, but we ask as well
+     so the key always works, and so the CSS fallback gets it too. */
+  if(state.fs === 'css') e.preventDefault();
+  exitFullscreen();
+});
+
+$('#btn-fs').onclick = toggleFullscreen;
+updateFsButton();
+
+/* ---------- count us in ----------
+   Netflix will not let us drive it, so we drive ourselves instead: one button
+   puts the same 3, 2, 1, Play in front of both of you, and you each press play
+   on your own copy when it lands. The message is fired the moment the button is
+   pressed and each side starts on receipt. Over a direct data channel that gap
+   is a few tens of milliseconds, far under the frame either of you will hit. */
+const COUNT_STEPS = ['3','2','1','Play'];
+const COUNT_GAP   = 1000;
+const COUNT_HOLD  = 900;
+
+function audioCtx(){
+  if(!state.actx){
+    try{ state.actx = new (window.AudioContext||window.webkitAudioContext)(); }
+    catch(err){ return null; }
+  }
+  if(state.actx.state === 'suspended'){ try{ state.actx.resume(); }catch(err){} }
+  return state.actx;
+}
+
+/* A soft sine blip, short enough to sit under a conversation. */
+function playTick(last){
+  if(!state.tick) return;
+  const ctx = audioCtx(); if(!ctx) return;
+  try{
+    const osc = ctx.createOscillator(), gain = ctx.createGain();
+    const now = ctx.currentTime, len = last ? 0.38 : 0.16;
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(last ? 784 : 523, now);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(last ? 0.13 : 0.075, now + 0.012);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + len);
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.start(now); osc.stop(now + len + 0.02);
+  }catch(err){}
+}
+
+function paintCount(num, box, text){
+  if(!num || !box) return;
+  num.textContent = text;
+  box.classList.add('show');
+  /* restart the pop for every number, not just the first */
+  num.style.animation = 'none';
+  void num.offsetWidth;
+  num.style.animation = '';
+}
+function showCount(text){
+  paintCount($('#count-num'), $('#countdown'), text);
+  paintCount(pip.num, pip.box, text);       // no-ops when nothing is floating
+}
+function hideCount(){
+  $('#countdown').classList.remove('show');
+  if(pip.box) pip.box.classList.remove('show');
+}
+
+function runCountIn(){
+  if(state.counting) return;                 // a second press mid-count is ignored
+  state.counting = true;
+  let i = 0;
+  (function step(){
+    const last = i === COUNT_STEPS.length - 1;
+    showCount(COUNT_STEPS[i]);
+    playTick(last);
+    i++;
+    state.countTimer = last
+      ? setTimeout(()=>{ hideCount(); state.counting = false; }, COUNT_HOLD)
+      : setTimeout(step, COUNT_GAP);
+  })();
+}
+
+function startCountIn(){
+  audioCtx();                                // unlock audio on this gesture
+  send({t:'countin'});
+  runCountIn();
+}
+
+$('#btn-count').onclick = startCountIn;
+$('#btn-tick').onclick = e => {
+  state.tick = !state.tick;
+  setPressed(e.currentTarget, state.tick, state.tick ? 'Tick on' : 'Tick off');
+};
+
+/* ---------- pop out faces ----------
+   Best case, Chrome and Edge on the desktop: a real always-on-top window that
+   takes both tiles and the controls, so the faces sit over Netflix.
+   Otherwise the plain video Picture in Picture on her tile, which is all Safari
+   and iOS will give us, and on an iPhone still floats above other apps.
+   Otherwise the button says so and switches itself off. */
+
+/* Written out rather than copied from the page: the page rules are built for a
+   fixed film with tiles floating over it, and none of that applies in a window
+   the size of a postcard. */
+const PIP_CSS = `
+:root{--ink:#0E0D12;--ink-2:#16151C;--line:#2A2833;--dust:#EDE8E0;--dust-dim:#9B9689;--amber:#E0A24B}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--ink);color:var(--dust);overflow:hidden;
+  font:13px/1.4 ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;cursor:pointer}
+.serif{font-family:"Instrument Serif",Georgia,serif;font-weight:400}
+.wrap{position:relative;height:100%;display:flex;flex-direction:column;gap:6px;padding:6px}
+.row{flex:1;min-height:0;display:flex;gap:6px}
+.cam{position:relative;flex:1 1 0;min-width:0;border-radius:10px;overflow:hidden;
+  background:#101017;border:1px solid var(--line);user-select:none;-webkit-user-select:none}
+.cam video{width:100%;height:100%;object-fit:cover;display:block}
+.cam.me video{transform:scaleX(-1)}
+.cam .tag{position:absolute;left:6px;bottom:5px;font-size:10px;letter-spacing:.06em;
+  text-transform:uppercase;color:#D9D4CB;text-shadow:0 1px 3px #000}
+.cam .resize{display:none}
+.cam.speaking{border-color:var(--amber)}
+.cam.off::after{content:"camera off";position:absolute;inset:0;display:grid;place-items:center;
+  font-size:10px;color:#6B6875}
+.cam:focus-visible{outline:2px solid var(--amber);outline-offset:-3px}
+.bar{display:flex;gap:6px;flex:0 0 auto}
+.bar button{flex:1;min-width:0;min-height:36px;padding:0 8px;border:1px solid var(--line);
+  background:transparent;border-radius:8px;font-size:12px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bar button[aria-pressed="true"]{border-color:var(--amber);color:var(--amber)}
+.bar button:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+.count{position:absolute;inset:0;display:none;place-items:center;
+  background:rgba(8,8,11,.72);pointer-events:none}
+.count.show{display:grid}
+.count-num{font-size:min(34vh,26vw);line-height:1;color:var(--dust);animation:pop .26s ease-out}
+@keyframes pop{from{transform:scale(.82);opacity:0}to{transform:scale(1);opacity:1}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+`;
+
+function pipSupport(){
+  if(window.documentPictureInPicture &&
+     typeof window.documentPictureInPicture.requestWindow === 'function') return 'doc';
+  if(document.pictureInPictureEnabled &&
+     typeof vThem.requestPictureInPicture === 'function' &&
+     !vThem.disablePictureInPicture) return 'video';
+  if(typeof vThem.webkitSupportsPresentationMode === 'function' &&
+     vThem.webkitSupportsPresentationMode('picture-in-picture')) return 'ios';
+  return null;
+}
+const PIP_MODE = pipSupport();
+
+function updatePipButton(){
+  const b = $('#btn-pip'), on = !!pip.mode;
+  b.textContent = on ? 'Bring faces back' : 'Pop out faces';
+  b.setAttribute('aria-pressed', String(on));
+  b.title = on ? 'Put the faces back in the page'
+               : 'Float the faces on top of Netflix';
+}
+
+/* Moving a media element between documents keeps its stream, but a stalled
+   element would be a dropped call, so the stream is re-seated and replayed
+   every time either tile changes home. */
+function reseatStreams(){
+  if(state.stream && vMe.srcObject !== state.stream) vMe.srcObject = state.stream;
+  if(state.remoteStream && vThem.srcObject !== state.remoteStream) vThem.srcObject = state.remoteStream;
+  for(const v of [vMe, vThem]){
+    if(!v.srcObject) continue;
+    const p = v.play(); if(p && p.catch) p.catch(()=>{});
+  }
+}
+
+async function openDocPip(){
+  let win;
+  try{
+    win = await window.documentPictureInPicture.requestWindow({ width:380, height:300 });
+  }catch(err){
+    toast('The browser would not open the floating window.');
+    return;
+  }
+  pip.win = win; pip.mode = 'doc';
+  const d = win.document;
+  d.title = 'Same Room';
+
+  const style = d.createElement('style');
+  style.textContent = PIP_CSS;
+  d.head.appendChild(style);
+  /* the display face, if it is there. Georgia stands in if it is not. */
+  try{
+    const font = document.querySelector('link[href*="fonts.googleapis.com/css2"]');
+    if(font) d.head.appendChild(font.cloneNode(true));
+  }catch(err){}
+
+  const wrap = d.createElement('div'); wrap.className = 'wrap';
+  const row  = d.createElement('div'); row.className  = 'row';
+  const bar  = d.createElement('div'); bar.className  = 'bar';
+
+  const mkBtn = (label, fn) => {
+    const b = d.createElement('button');
+    b.type = 'button'; b.textContent = label;
+    b.addEventListener('click', fn);
+    return b;
+  };
+  pip.btnMic   = mkBtn('Mic on', ()=> toggleTrack('audio'));
+  pip.btnCam   = mkBtn('Camera on', ()=> toggleTrack('video'));
+  pip.btnCount = mkBtn('Count us in', startCountIn);
+  bar.append(pip.btnMic, pip.btnCam, pip.btnCount);
+
+  pip.box = d.createElement('div'); pip.box.className = 'count';
+  pip.box.setAttribute('role','status');
+  pip.box.setAttribute('aria-live','assertive');
+  pip.num = d.createElement('div'); pip.num.className = 'count-num serif';
+  pip.box.appendChild(pip.num);
+
+  wrap.append(row, bar, pip.box);
+  d.body.appendChild(wrap);
+
+  /* inline left/top/width come off, otherwise they would beat the flex row */
+  for(const el of [camMe, camThem]){
+    el.style.left = el.style.top = el.style.width = '';
+    row.appendChild(el);
+  }
+  reseatStreams();
+
+  document.body.classList.add('pip-on');
+  syncMediaButtons();
+  updatePipButton();
+  win.addEventListener('pagehide', restoreFromDocPip);
+}
+
+/* Runs whether she closed the window, we closed it, or the browser did. */
+function restoreFromDocPip(){
+  if(pip.mode !== 'doc') return;
+  pip.mode = null; pip.win = null;
+  pip.btnMic = pip.btnCam = pip.btnCount = pip.box = pip.num = null;
+  const cams = $('#cams');
+  cams.appendChild(camMe);
+  cams.appendChild(camThem);
+  document.body.classList.remove('pip-on');
+  renderTiles();            // back onto the exact pixels they left from
+  reflowTiles();            // in case the page was resized while they were away
+  reseatStreams();
+  hideCount();
+  syncMediaButtons();
+  updatePipButton();
+}
+
+async function openVideoPip(){
+  try{
+    await vThem.requestPictureInPicture();
+  }catch(err){
+    toast(state.remoteStream ? 'The browser would not float that video.'
+                             : 'Wait until they join, then try again.');
+  }
+}
+function openIosPip(){
+  try{ vThem.webkitSetPresentationMode('picture-in-picture'); }
+  catch(err){ toast('The browser would not float that video.'); }
+}
+
+function togglePip(){
+  if(pip.mode === 'doc'){ try{ pip.win.close(); }catch(err){} restoreFromDocPip(); return; }
+  if(pip.mode === 'video'){ try{ document.exitPictureInPicture(); }catch(err){} return; }
+  if(pip.mode === 'ios'){ try{ vThem.webkitSetPresentationMode('inline'); }catch(err){} return; }
+  if(PIP_MODE === 'doc')   return openDocPip();
+  if(PIP_MODE === 'video') return openVideoPip();
+  if(PIP_MODE === 'ios')   return openIosPip();
+}
+
+/* The browser owns these two windows: it can close them without asking us. */
+vThem.addEventListener('enterpictureinpicture', ()=>{ pip.mode = 'video'; updatePipButton(); });
+vThem.addEventListener('leavepictureinpicture', ()=>{ pip.mode = null; updatePipButton(); });
+vThem.addEventListener('webkitpresentationmodechanged', ()=>{
+  pip.mode = vThem.webkitPresentationMode === 'picture-in-picture' ? 'ios' : null;
+  updatePipButton();
+});
+
+$('#btn-pip').onclick = togglePip;
+if(!PIP_MODE){
+  $('#btn-pip').disabled = true;
+  $('#btn-pip').title = 'This browser cannot float a video';
+  const note = $('#pip-note');
+  note.hidden = false;
+  note.textContent = 'This browser cannot float the faces on top of other windows, so put this window and Netflix side by side instead.';
+}
+updatePipButton();
+
+/* ---------- connect ---------- */
+async function start(asHost){
+  const room = $('#room').value.trim().toLowerCase().replace(/[^a-z0-9-]/g,'-');
+  if(!room){ toast('Pick a room name first.'); return; }
+  state.room = room; state.isHost = asHost;
+
+  $('#entry').style.display='none';
+  $('#stage').style.display='flex';
+  setStatus(asHost ? 'waiting for them…' : 'connecting…', 'wait');
+  initTiles();
+
+  await getMedia();
+
+  const hostId = PREFIX + room;
+  const myId   = asHost ? hostId : hostId + '-' + Math.random().toString(36).slice(2,8);
+
+  state.peer = new Peer(myId, {
+    debug:0,
+    config:{ iceServers:[
+      { urls:'stun:stun.l.google.com:19302' },
+      { urls:'stun:global.stun.twilio.com:3478' }
+      /* If you're behind a strict mobile network and it won't connect,
+         add a TURN server here:
+         ,{ urls:'turn:YOUR_HOST:3478', username:'USER', credential:'PASS' } */
+    ]}
+  });
+
+  state.peer.on('open', ()=>{
+    if(asHost){ setStatus('room open, share the name', 'wait'); }
+    else {
+      wireConn(state.peer.connect(hostId, {reliable:true}));
+      if(state.stream) wireCall(state.peer.call(hostId, state.stream));
+      setTimeout(()=>send({t:'hello'}), 800);
+    }
+  });
+
+  state.peer.on('connection', conn => wireConn(conn));
+  state.peer.on('call', call => {
+    if(state.stream) call.answer(state.stream); else call.answer();
+    wireCall(call);
+  });
+  state.peer.on('error', err => {
+    if(String(err).includes('unavailable-id')){
+      setStatus('room already open, press Join instead', 'wait');
+      toast('That room is already open. Use Join.');
+    } else {
+      setStatus('connection problem', 'wait');
+    }
+  });
+}
+
+/* ---------- controls ---------- */
+$('#btn-open').onclick = ()=> start(true);
+$('#btn-join').onclick = ()=> start(false);
+$('#room').addEventListener('keydown', e=>{ if(e.key==='Enter') start(true); });
+
+$('#btn-load').onclick = ()=>{
+  const id = youtubeId($('#url').value);
+  if(!id){ toast('That doesn\'t look like a YouTube link.'); return; }
+  loadYouTube(id, true);
+};
+$('#url').addEventListener('keydown', e=>{ if(e.key==='Enter') $('#btn-load').click(); });
+
+btnMic.onclick = ()=> toggleTrack('audio');
+btnCam.onclick = ()=> toggleTrack('video');
+$('#btn-duck').onclick = e=>{
+  state.duck = !state.duck;
+  e.currentTarget.setAttribute('aria-pressed', String(state.duck));
+  if(!state.duck) player.volume(state.baseVolume);
+};
+$('#btn-sync').onclick = ()=>{ broadcastState(); toast('Sent your position.'); };
+$('#btn-leave').onclick = ()=>{
+  clearTimeout(state.countTimer);
+  if(pip.mode === 'doc' && pip.win){ try{ pip.win.close(); }catch(e){} }
+  try{ state.peer && state.peer.destroy(); }catch(e){}
+  location.reload();
+};
+
+/* A reload leaves an orphaned floating window behind otherwise. */
+window.addEventListener('pagehide', ()=>{
+  if(pip.mode === 'doc' && pip.win){ try{ pip.win.close(); }catch(e){} }
+});
+
+/* keep the call alive when Safari backgrounds the tab */
+document.addEventListener('visibilitychange', ()=>{
+  if(!document.hidden && state.conn && state.conn.open) broadcastState();
+});
+</script>
+</body>
+</html>
