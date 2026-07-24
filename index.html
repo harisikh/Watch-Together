@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0E0D12">
+<title>Same Room</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#0E0D12;          /* room lights off */
+    --ink-2:#16151C;
+    --line:#2A2833;
+    --dust:#EDE8E0;         /* projector light */
+    --dust-dim:#9B9689;
+    --amber:#E0A24B;        /* the lamp */
+    --rose:#C97E7A;         /* her */
+    --ok:#7FA37A;
+    --r:10px;
+    --safe-b:env(safe-area-inset-bottom,0px);
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0; background:var(--ink); color:var(--dust);
+    font:15px/1.5 ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif;
+    -webkit-font-smoothing:antialiased;
+    overscroll-behavior:none;
+  }
+  button,input,select{font:inherit;color:inherit}
+  button{cursor:pointer}
+  .serif{font-family:"Instrument Serif",Georgia,serif;font-weight:400}
+
+  /* ---------- entry ---------- */
+  #entry{
+    position:fixed;inset:0;display:grid;place-items:center;padding:24px;
+    background:radial-gradient(120% 80% at 50% -10%,#1B1922 0%,var(--ink) 60%);
+    z-index:50;
+  }
+  .card{width:min(420px,100%)}
+  .title{font-size:44px;line-height:1.05;letter-spacing:-.01em;margin:0 0 6px}
+  .title em{font-style:italic;color:var(--amber)}
+  .sub{color:var(--dust-dim);margin:0 0 28px;font-size:14px}
+  label{display:block;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--dust-dim);margin:0 0 6px}
+  input[type=text]{
+    width:100%;padding:13px 14px;background:var(--ink-2);border:1px solid var(--line);
+    border-radius:var(--r);outline:none;
+  }
+  input[type=text]:focus{border-color:var(--amber);box-shadow:0 0 0 3px rgba(224,162,75,.15)}
+  .row{display:flex;gap:10px;margin-top:14px}
+  .btn{
+    flex:1;padding:13px 16px;border:1px solid var(--line);background:var(--ink-2);
+    border-radius:var(--r);transition:border-color .15s,background .15s,transform .06s;
+    min-height:46px;
+  }
+  .btn:active{transform:translateY(1px)}
+  .btn.primary{background:var(--amber);border-color:var(--amber);color:#1A1206;font-weight:600}
+  @media (hover:hover){ .btn:hover{border-color:#4A4657} .btn.primary:hover{filter:brightness(1.06)} }
+  .hint{margin-top:18px;font-size:12.5px;color:var(--dust-dim);line-height:1.6}
+  .hint b{color:var(--dust);font-weight:600}
+
+  /* ---------- stage ---------- */
+  #stage{position:fixed;inset:0;display:none;flex-direction:column}
+  #screen{
+    position:relative;flex:1;min-height:0;background:#000;
+    display:grid;place-items:center;
+  }
+  #yt,#local-video{position:absolute;inset:0;width:100%;height:100%;border:0}
+  #local-video{background:#000;object-fit:contain}
+  #idle{color:#55525E;font-size:14px;text-align:center;padding:24px}
+
+  /* camera tiles */
+  #cams{
+    position:absolute;right:12px;bottom:12px;display:flex;flex-direction:column;gap:8px;
+    z-index:5;
+  }
+  .cam{
+    position:relative;width:132px;aspect-ratio:3/4;border-radius:12px;overflow:hidden;
+    background:#101017;border:1px solid var(--line);
+    box-shadow:0 12px 30px -12px rgba(0,0,0,.8);
+  }
+  .cam video{width:100%;height:100%;object-fit:cover;display:block}
+  .cam.me video{transform:scaleX(-1)}
+  .cam .tag{
+    position:absolute;left:7px;bottom:6px;font-size:10.5px;letter-spacing:.06em;
+    text-transform:uppercase;color:#D9D4CB;text-shadow:0 1px 3px #000;
+  }
+  .cam.speaking{border-color:var(--amber)}
+  .cam.off::after{content:"camera off";position:absolute;inset:0;display:grid;place-items:center;font-size:11px;color:#6B6875}
+  @media (max-width:520px){ .cam{width:96px} }
+
+  /* controls */
+  #bar{
+    display:flex;align-items:center;gap:8px;padding:10px 12px calc(10px + var(--safe-b));
+    background:var(--ink-2);border-top:1px solid var(--line);flex-wrap:wrap;
+  }
+  .ctl{
+    display:inline-flex;align-items:center;justify-content:center;gap:7px;
+    min-width:44px;min-height:44px;padding:0 13px;border:1px solid var(--line);
+    background:transparent;border-radius:var(--r);font-size:13.5px;
+  }
+  .ctl[aria-pressed="true"]{border-color:var(--amber);color:var(--amber)}
+  .ctl.danger{border-color:#5C3033;color:#D98A86}
+  @media (hover:hover){ .ctl:hover{border-color:#4A4657} }
+  #status{margin-left:auto;font-size:12.5px;color:var(--dust-dim);display:flex;align-items:center;gap:7px}
+  .dot{width:7px;height:7px;border-radius:50%;background:#5A5766}
+  .dot.live{background:var(--ok)}
+  .dot.wait{background:var(--amber)}
+  #srcbar{display:flex;gap:8px;padding:10px 12px;border-top:1px solid var(--line);flex-wrap:wrap}
+  #srcbar input[type=text]{flex:1;min-width:180px}
+  .file-btn{position:relative;overflow:hidden}
+  .file-btn input{position:absolute;inset:0;opacity:0;cursor:pointer}
+
+  #toast{
+    position:fixed;left:50%;bottom:calc(84px + var(--safe-b));transform:translateX(-50%);
+    background:#22202B;border:1px solid var(--line);padding:10px 14px;border-radius:99px;
+    font-size:13px;opacity:0;pointer-events:none;transition:opacity .3s;z-index:20;white-space:nowrap;
+  }
+  #toast.show{opacity:1}
+  #gate{
+    position:absolute;inset:0;display:none;place-items:center;background:rgba(8,8,11,.82);z-index:8;
+  }
+  #gate button{padding:16px 26px;border-radius:99px;border:1px solid var(--amber);background:var(--amber);color:#1A1206;font-weight:600}
+  @media (prefers-reduced-motion:reduce){ *{transition:none!important;animation:none!important} }
+</style>
+</head>
+<body>
+
+<!-- ENTRY -->
+<div id="entry">
+  <div class="card">
+    <h1 class="title serif">Same <em>room</em></h1>
+    <p class="sub">Watch together from two places. Your faces come over the call — the film plays on both screens at once.</p>
+
+    <label for="room">Room name</label>
+    <input id="room" type="text" placeholder="something only you two would guess" autocomplete="off" spellcheck="false">
+
+    <div class="row">
+      <button class="btn primary" id="btn-open">Open the room</button>
+      <button class="btn" id="btn-join">Join</button>
+    </div>
+
+    <p class="hint">
+      One of you opens the room, the other joins with the same name.
+      <b>Wear headphones</b> — otherwise each mic picks up the film and it echoes.
+    </p>
+  </div>
+</div>
+
+<!-- STAGE -->
+<div id="stage">
+  <div id="screen">
+    <div id="idle">Paste a YouTube link below, or load the same movie file on both sides.</div>
+    <div id="yt"></div>
+    <video id="local-video" playsinline webkit-playsinline controls style="display:none"></video>
+    <div id="gate"><button id="gate-btn">Tap to start playback</button></div>
+
+    <div id="cams">
+      <div class="cam me" id="cam-me"><video id="v-me" playsinline webkit-playsinline autoplay muted></video><span class="tag">you</span></div>
+      <div class="cam" id="cam-them"><video id="v-them" playsinline webkit-playsinline autoplay></video><span class="tag">them</span></div>
+    </div>
+  </div>
+
+  <div id="srcbar">
+    <input id="url" type="text" placeholder="YouTube link" autocomplete="off" spellcheck="false">
+    <button class="ctl" id="btn-load">Play this</button>
+    <button class="ctl file-btn">Load movie file<input id="file" type="file" accept="video/*"></button>
+  </div>
+
+  <div id="bar">
+    <button class="ctl" id="btn-mic" aria-pressed="false">Mic on</button>
+    <button class="ctl" id="btn-cam" aria-pressed="false">Camera on</button>
+    <button class="ctl" id="btn-duck" aria-pressed="true">Duck film when talking</button>
+    <button class="ctl" id="btn-sync">Resync</button>
+    <button class="ctl danger" id="btn-leave">Leave</button>
+    <span id="status"><span class="dot" id="dot"></span><span id="status-text">connecting…</span></span>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script>
+/* ============================================================
+   Same Room — WebRTC call + synchronised playback.
+   The film is NEVER streamed between you: each side plays its own
+   copy (YouTube, or the same local file) and only tiny play/pause/
+   seek messages travel over the data channel. That's why there's
+   no lag no matter how far apart you are.
+   ============================================================ */
+
+const $ = s => document.querySelector(s);
+const PREFIX = 'sameroom-';            // namespaces ids on the public broker
+const DRIFT  = 0.75;                   // seconds of drift before we correct
+const state = {
+  peer:null, conn:null, mediaCall:null, isHost:false, room:'',
+  stream:null, mode:null,               // 'yt' | 'file'
+  yt:null, ytReady:false, pendingLoad:null,
+  applyingRemote:false, duck:true, baseVolume:1,
+  heartbeat:null, driftTimer:null
+};
+
+/* ---------- small helpers ---------- */
+function toast(msg, ms=2600){
+  const t=$('#toast'); t.textContent=msg; t.classList.add('show');
+  clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove('show'), ms);
+}
+function setStatus(text, cls){
+  $('#status-text').textContent = text;
+  $('#dot').className = 'dot' + (cls ? ' '+cls : '');
+}
+function send(msg){
+  if(state.conn && state.conn.open){ try{ state.conn.send(msg); }catch(e){} }
+}
+function youtubeId(url){
+  if(!url) return null;
+  const s = url.trim();
+  if(/^[\w-]{11}$/.test(s)) return s;
+  const m = s.match(/(?:youtu\.be\/|v=|\/embed\/|\/shorts\/)([\w-]{11})/);
+  return m ? m[1] : null;
+}
+
+/* ---------- playback abstraction (YouTube or local file) ---------- */
+const player = {
+  time(){
+    if(state.mode==='yt' && state.yt && state.yt.getCurrentTime) return state.yt.getCurrentTime()||0;
+    if(state.mode==='file') return $('#local-video').currentTime||0;
+    return 0;
+  },
+  playing(){
+    if(state.mode==='yt' && state.yt && state.yt.getPlayerState) return state.yt.getPlayerState()===1;
+    if(state.mode==='file') return !$('#local-video').paused;
+    return false;
+  },
+  play(){
+    if(state.mode==='yt' && state.yt) state.yt.playVideo();
+    if(state.mode==='file'){ const p=$('#local-video').play(); if(p&&p.catch) p.catch(()=>showGate()); }
+  },
+  pause(){
+    if(state.mode==='yt' && state.yt) state.yt.pauseVideo();
+    if(state.mode==='file') $('#local-video').pause();
+  },
+  seek(t){
+    if(state.mode==='yt' && state.yt) state.yt.seekTo(t, true);
+    if(state.mode==='file') $('#local-video').currentTime = t;
+  },
+  volume(v){ // 0..1
+    if(state.mode==='yt' && state.yt && state.yt.setVolume) state.yt.setVolume(Math.round(v*100));
+    if(state.mode==='file') $('#local-video').volume = v;
+  }
+};
+
+function showGate(){ $('#gate').style.display='grid'; }
+$('#gate-btn').addEventListener('click', ()=>{ $('#gate').style.display='none'; player.play(); });
+
+/* ---------- YouTube iframe API ---------- */
+const ytTag = document.createElement('script');
+ytTag.src = 'https://www.youtube.com/iframe_api';
+document.head.appendChild(ytTag);
+
+window.onYouTubeIframeAPIReady = () => {
+  state.yt = new YT.Player('yt', {
+    height:'100%', width:'100%',
+    playerVars:{ playsinline:1, rel:0, modestbranding:1, controls:1 },
+    events:{
+      onReady: () => {
+        state.ytReady = true;
+        if(state.pendingLoad){ const id=state.pendingLoad; state.pendingLoad=null; loadYouTube(id, true); }
+      },
+      onStateChange: e => {
+        if(state.applyingRemote || state.mode!=='yt') return;
+        if(e.data===YT.PlayerState.PLAYING || e.data===YT.PlayerState.PAUSED) broadcastState();
+      }
+    }
+  });
+};
+
+function loadYouTube(id, local){
+  state.mode = 'yt';
+  $('#idle').style.display='none';
+  $('#local-video').style.display='none';
+  $('#local-video').pause();
+  if(!state.ytReady){ state.pendingLoad = id; return; }
+  document.getElementById('yt').style.display='block';
+  state.applyingRemote = true;
+  state.yt.loadVideoById(id);
+  setTimeout(()=>{ state.applyingRemote=false; }, 900);
+  if(local) send({t:'load', kind:'yt', id});
+}
+
+/* ---------- local file ---------- */
+$('#file').addEventListener('change', e => {
+  const f = e.target.files && e.target.files[0];
+  if(!f) return;
+  const v = $('#local-video');
+  v.src = URL.createObjectURL(f);
+  v.style.display='block';
+  document.getElementById('yt').style.display='none';
+  $('#idle').style.display='none';
+  state.mode='file';
+  toast('Loaded. Make sure they load the same file on their side.');
+  send({t:'load', kind:'file', name:f.name});
+});
+
+['play','pause','seeked'].forEach(evt =>
+  $('#local-video').addEventListener(evt, () => {
+    if(state.applyingRemote || state.mode!=='file') return;
+    broadcastState();
+  })
+);
+
+/* ---------- sync protocol ---------- */
+function broadcastState(){
+  send({ t:'state', playing:player.playing(), time:player.time(), at:Date.now() });
+}
+function applyState(m){
+  if(!state.mode) return;
+  const latency = Math.max(0,(Date.now()-m.at))/1000;
+  const target  = m.playing ? m.time + latency : m.time;
+  state.applyingRemote = true;
+  if(Math.abs(player.time()-target) > DRIFT) player.seek(target);
+  if(m.playing && !player.playing()) player.play();
+  if(!m.playing && player.playing()) player.pause();
+  setTimeout(()=>{ state.applyingRemote=false; }, 700);
+}
+
+function startTimers(){
+  clearInterval(state.heartbeat);
+  state.heartbeat = setInterval(()=>{ if(state.mode && player.playing()) broadcastState(); }, 4000);
+}
+
+/* ---------- data messages ---------- */
+function wireConn(conn){
+  state.conn = conn;
+  conn.on('open', ()=>{
+    setStatus('connected', 'live');
+    toast('Connected.');
+    startTimers();
+    if(state.mode) { broadcastState(); }
+  });
+  conn.on('data', m => {
+    if(!m || !m.t) return;
+    if(m.t==='load'){
+      if(m.kind==='yt'){ loadYouTube(m.id, false); toast('They started a video.'); }
+      else toast('They loaded: ' + (m.name||'a file') + ' — open your copy.');
+    }
+    else if(m.t==='state') applyState(m);
+    else if(m.t==='hello') broadcastState();
+  });
+  conn.on('close', ()=>{ setStatus('they left', 'wait'); });
+  conn.on('error', ()=>{ setStatus('connection error', 'wait'); });
+}
+
+/* ---------- media ---------- */
+async function getMedia(){
+  try{
+    state.stream = await navigator.mediaDevices.getUserMedia({
+      video:{ width:{ideal:640}, height:{ideal:480}, facingMode:'user' },
+      audio:{ echoCancellation:true, noiseSuppression:true, autoGainControl:true }
+    });
+  }catch(err){
+    toast('No camera or mic — you can still watch together.');
+    state.stream = null;
+    return;
+  }
+  $('#v-me').srcObject = state.stream;
+  $('#btn-mic').setAttribute('aria-pressed','true');
+  $('#btn-cam').setAttribute('aria-pressed','true');
+  listenForSpeech();
+}
+
+function wireCall(call){
+  state.mediaCall = call;
+  call.on('stream', remote => {
+    const v = $('#v-them');
+    if(v.srcObject !== remote){
+      v.srcObject = remote;
+      const p = v.play(); if(p && p.catch) p.catch(()=>{});
+    }
+  });
+  call.on('close', ()=> { $('#v-them').srcObject = null; });
+}
+
+/* ducking: drop film volume while you're actually talking */
+function listenForSpeech(){
+  if(!state.stream) return;
+  const track = state.stream.getAudioTracks()[0];
+  if(!track) return;
+  let ctx;
+  try{ ctx = new (window.AudioContext||window.webkitAudioContext)(); }catch(e){ return; }
+  const src = ctx.createMediaStreamSource(new MediaStream([track]));
+  const an  = ctx.createAnalyser(); an.fftSize = 512;
+  src.connect(an);
+  const buf = new Uint8Array(an.frequencyBinCount);
+  let quietSince = 0, ducked = false;
+
+  const resume = ()=>{ if(ctx.state==='suspended') ctx.resume(); };
+  document.addEventListener('visibilitychange', resume);
+  document.addEventListener('pointerdown', resume, {passive:true});
+
+  (function loop(){
+    an.getByteFrequencyData(buf);
+    let sum=0; for(let i=0;i<buf.length;i++) sum+=buf[i];
+    const level = sum/buf.length;
+    const talking = level > 22 && !track.muted && track.enabled;
+    $('#cam-me').classList.toggle('speaking', talking);
+
+    if(state.duck && state.mode){
+      if(talking){ quietSince = Date.now(); if(!ducked){ ducked=true; player.volume(0.25); } }
+      else if(ducked && Date.now()-quietSince > 1200){ ducked=false; player.volume(state.baseVolume); }
+    }
+    requestAnimationFrame(loop);
+  })();
+}
+
+/* ---------- connect ---------- */
+async function start(asHost){
+  const room = $('#room').value.trim().toLowerCase().replace(/[^a-z0-9-]/g,'-');
+  if(!room){ toast('Pick a room name first.'); return; }
+  state.room = room; state.isHost = asHost;
+
+  $('#entry').style.display='none';
+  $('#stage').style.display='flex';
+  setStatus(asHost ? 'waiting for them…' : 'connecting…', 'wait');
+
+  await getMedia();
+
+  const hostId = PREFIX + room;
+  const myId   = asHost ? hostId : hostId + '-' + Math.random().toString(36).slice(2,8);
+
+  state.peer = new Peer(myId, {
+    debug:0,
+    config:{ iceServers:[
+      { urls:'stun:stun.l.google.com:19302' },
+      { urls:'stun:global.stun.twilio.com:3478' }
+      /* If you're behind a strict mobile network and it won't connect,
+         add a TURN server here:
+         ,{ urls:'turn:YOUR_HOST:3478', username:'USER', credential:'PASS' } */
+    ]}
+  });
+
+  state.peer.on('open', ()=>{
+    if(asHost){ setStatus('room open — share the name', 'wait'); }
+    else {
+      wireConn(state.peer.connect(hostId, {reliable:true}));
+      if(state.stream) wireCall(state.peer.call(hostId, state.stream));
+      setTimeout(()=>send({t:'hello'}), 800);
+    }
+  });
+
+  state.peer.on('connection', conn => wireConn(conn));
+  state.peer.on('call', call => {
+    if(state.stream) call.answer(state.stream); else call.answer();
+    wireCall(call);
+  });
+  state.peer.on('error', err => {
+    if(String(err).includes('unavailable-id')){
+      setStatus('room already open — press Join instead', 'wait');
+      toast('That room is already open. Use Join.');
+    } else {
+      setStatus('connection problem', 'wait');
+    }
+  });
+}
+
+/* ---------- controls ---------- */
+$('#btn-open').onclick = ()=> start(true);
+$('#btn-join').onclick = ()=> start(false);
+$('#room').addEventListener('keydown', e=>{ if(e.key==='Enter') start(true); });
+
+$('#btn-load').onclick = ()=>{
+  const id = youtubeId($('#url').value);
+  if(!id){ toast('That doesn\'t look like a YouTube link.'); return; }
+  loadYouTube(id, true);
+};
+$('#url').addEventListener('keydown', e=>{ if(e.key==='Enter') $('#btn-load').click(); });
+
+$('#btn-mic').onclick = e=>{
+  if(!state.stream) return;
+  const t = state.stream.getAudioTracks()[0]; if(!t) return;
+  t.enabled = !t.enabled;
+  e.currentTarget.setAttribute('aria-pressed', String(t.enabled));
+  e.currentTarget.textContent = t.enabled ? 'Mic on' : 'Mic off';
+};
+$('#btn-cam').onclick = e=>{
+  if(!state.stream) return;
+  const t = state.stream.getVideoTracks()[0]; if(!t) return;
+  t.enabled = !t.enabled;
+  e.currentTarget.setAttribute('aria-pressed', String(t.enabled));
+  e.currentTarget.textContent = t.enabled ? 'Camera on' : 'Camera off';
+  $('#cam-me').classList.toggle('off', !t.enabled);
+};
+$('#btn-duck').onclick = e=>{
+  state.duck = !state.duck;
+  e.currentTarget.setAttribute('aria-pressed', String(state.duck));
+  if(!state.duck) player.volume(state.baseVolume);
+};
+$('#btn-sync').onclick = ()=>{ broadcastState(); toast('Sent your position.'); };
+$('#btn-leave').onclick = ()=>{ try{ state.peer && state.peer.destroy(); }catch(e){} location.reload(); };
+
+/* keep the call alive when Safari backgrounds the tab */
+document.addEventListener('visibilitychange', ()=>{
+  if(!document.hidden && state.conn && state.conn.open) broadcastState();
+});
+</script>
+</body>
+</html>
