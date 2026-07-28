@@ -55,7 +55,7 @@
   };
 
   const SAME_PAGE_GAME = 'same-page';
-  const SAME_PAGE_BANK_VERSION = 2;
+  const SAME_PAGE_BANK_VERSION = 3;
   const SAME_PAGE_PHASES = new Set(['answering', 'revealing', 'revealed', 'complete']);
   const SAME_PAGE_INPUT_ACTIONS = new Set(['answer-commit', 'answer-reveal', 'next', 'restart']);
   const samePage = {
@@ -75,6 +75,21 @@
   );
   const SAME_PAGE_SET_SIZE = 40;
   const SAME_PAGE_QUESTIONS = Object.freeze(SAME_PAGE_QUESTION_SETS.flatMap(set => set.questions));
+  const normalizeContentText = value => String(value).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const seenQuestionTexts = new Set();
+  const seenAnswerSets = new Set();
+  for (const set of SAME_PAGE_QUESTION_SETS) {
+    if (set.questions.length !== SAME_PAGE_SET_SIZE) throw new Error(`Question set ${set.name} must contain exactly 40 questions.`);
+    for (const question of set.questions) {
+      const questionKey = normalizeContentText(question.q);
+      const answerKey = question.a.map(normalizeContentText).sort().join('|');
+      if (!questionKey || question.a.length < 2 || new Set(question.a.map(normalizeContentText)).size !== question.a.length) throw new Error(`Invalid or repetitive answers in question set ${set.name}.`);
+      if (seenQuestionTexts.has(questionKey)) throw new Error(`Duplicate Same Page question: ${question.q}`);
+      if (seenAnswerSets.has(answerKey)) throw new Error(`Duplicate Same Page answer set in ${set.name}.`);
+      seenQuestionTexts.add(questionKey);
+      seenAnswerSets.add(answerKey);
+    }
+  }
   if (SAME_PAGE_QUESTIONS.length < 500 || SAME_PAGE_QUESTIONS.length > 600 || SAME_PAGE_QUESTIONS.length % SAME_PAGE_SET_SIZE !== 0) {
     throw new Error('Same Room requires 500 to 600 questions in complete 40-question packs.');
   }
@@ -518,8 +533,11 @@
       const session = safeProtocolToken(message.session, 80);
       const request = Boolean(message.request);
       const requestId = safeProtocolToken(message.requestId, 80, !request);
-      if (game === null || (game && !AVAILABLE_GAMES.has(game)) || version === null || !session || (request && !requestId)) return null;
-      return { t: type, game, version, session, request, requestId: requestId || '' };
+      const rawSetIndex = Number(message.setIndex ?? -1);
+      const setIndex = Number.isSafeInteger(rawSetIndex) && rawSetIndex >= -1 && rawSetIndex < SAME_PAGE_QUESTION_SETS.length ? rawSetIndex : null;
+      if (game === null || (game && !AVAILABLE_GAMES.has(game)) || version === null || !session || (request && !requestId) || setIndex === null) return null;
+      if (game !== SAME_PAGE_GAME && setIndex !== -1) return null;
+      return { t: type, game, setIndex, version, session, request, requestId: requestId || '' };
     }
 
     if (type === 'game-state' || type === 'game-input') {
@@ -690,7 +708,7 @@
   }
 
   function setModeControlsEnabled(enabled) {
-    ['#sr-choose-watch', '#sr-choose-games', '#sr-games-home', '#sr-watch-home', '#sr-game-same-page', '#sr-game-draw-and-guess', '#sr-sp-back-games', '#sr-sp-home', '#sr-dg-back-games', '#sr-dg-home'].forEach(selector => {
+    ['#sr-choose-watch', '#sr-choose-games', '#sr-games-home', '#sr-watch-home', '#sr-game-same-page', '#sr-same-page-set', '#sr-game-draw-and-guess', '#sr-sp-back-games', '#sr-sp-home', '#sr-dg-back-games', '#sr-dg-home'].forEach(selector => {
       const control = document.querySelector(selector);
       if (control) control.disabled = !enabled;
     });
@@ -846,10 +864,11 @@
     renderSamePage();
   }
 
-  function startSamePageSession() {
+  function startSamePageSession(requestedSetIndex = -1) {
     const previousSetIndex = samePage.state ? samePage.state.setIndex : -1;
     resetSamePageLocalState();
-    samePage.state = newSamePageRound(null, chooseNextQuestionSet(previousSetIndex));
+    const setIndex = Number.isSafeInteger(requestedSetIndex) && requestedSetIndex >= 0 ? requestedSetIndex : chooseNextQuestionSet(previousSetIndex);
+    samePage.state = newSamePageRound(null, setIndex);
     renderSamePage();
   }
 
@@ -885,7 +904,7 @@
   function sendCurrentRoomView() {
     if (!state.isHost || !connectedSecurely()) return;
     send({ t: 'mode', mode: upgrade.roomView, version: upgrade.roomViewVersion, session: upgrade.roomViewSession, request: false, requestId: '' });
-    send({ t: 'game-select', game: upgrade.selectedGame, version: upgrade.gameVersion, session: upgrade.roomViewSession, request: false, requestId: '' });
+    send({ t: 'game-select', game: upgrade.selectedGame, setIndex: upgrade.selectedGame === SAME_PAGE_GAME && samePage.state ? samePage.state.setIndex : -1, version: upgrade.gameVersion, session: upgrade.roomViewSession, request: false, requestId: '' });
     if (upgrade.selectedGame === SAME_PAGE_GAME) sendSamePageSnapshot();
     if (upgrade.selectedGame === DRAW_GAME) sendDrawingSnapshot();
   }
@@ -950,7 +969,7 @@
     setModeControlsEnabled(true);
   }
 
-  function commitGameSelect(game) {
+  function commitGameSelect(game, requestedSetIndex = -1) {
     if (!state.isHost || (game && !AVAILABLE_GAMES.has(game))) return;
     if (upgrade.selectedGame === game) {
       sendCurrentRoomView();
@@ -959,14 +978,14 @@
     if (upgrade.selectedGame) leaveCurrentGame(false);
     upgrade.selectedGame = game;
     upgrade.gameVersion += 1;
-    if (game === SAME_PAGE_GAME) startSamePageSession();
+    if (game === SAME_PAGE_GAME) startSamePageSession(requestedSetIndex);
     if (game === DRAW_GAME) startDrawingSession();
     window.dispatchEvent(new CustomEvent('same-room-game-select', { detail: { game, version: upgrade.gameVersion } }));
     applySelectedGameUI();
     sendCurrentRoomView();
   }
 
-  function requestGameSelect(game) {
+  function requestGameSelect(game, requestedSetIndex = -1) {
     if (game && !AVAILABLE_GAMES.has(game)) return;
     if (!connectedSecurely()) {
       toast('Reconnect before changing the game.');
@@ -977,9 +996,9 @@
       const leaveGame = window.confirm('Leave this game and return to the game list?');
       if (!leaveGame) return;
     }
-    if (state.isHost) commitGameSelect(game);
+    if (state.isHost) commitGameSelect(game, requestedSetIndex);
     else send({
-      t: 'game-select', game, version: upgrade.gameVersion, session: upgrade.roomViewSession,
+      t: 'game-select', game, setIndex: game === SAME_PAGE_GAME ? requestedSetIndex : -1, version: upgrade.gameVersion, session: upgrade.roomViewSession,
       request: true, requestId: randomId(10)
     });
   }
@@ -987,7 +1006,7 @@
   function handleGameSelectMessage(message) {
     if (state.isHost) {
       if (!message.request || message.session !== upgrade.roomViewSession) return;
-      commitGameSelect(message.game);
+      commitGameSelect(message.game, message.setIndex);
       return;
     }
     if (message.request || message.session !== upgrade.roomViewSession || message.version < upgrade.gameVersion) return;
@@ -1091,7 +1110,7 @@
   function restartSamePageSession() {
     if (!state.isHost || !samePage.state || samePage.state.phase !== 'complete') return;
     clearLocalSamePageAnswer(samePage.state.gameSessionId, samePage.state.roundId);
-    samePage.state = newSamePageRound();
+    samePage.state = newSamePageRound(null, samePage.state.setIndex);
     renderSamePage();
     sendSamePageSnapshot();
   }
@@ -1236,11 +1255,12 @@
     const questionElement = document.querySelector('#sr-sp-question');
     const options = document.querySelector('#sr-sp-options');
     const status = document.querySelector('#sr-sp-status');
+    const setName = document.querySelector('#sr-sp-set-name');
     const progress = document.querySelector('#sr-sp-progress');
     const matchCount = document.querySelector('#sr-sp-match-count');
     const reveal = document.querySelector('#sr-sp-reveal');
     const next = document.querySelector('#sr-sp-next');
-    if (!questionElement || !options || !status || !progress || !matchCount || !reveal || !next) return;
+    if (!questionElement || !options || !status || !setName || !progress || !matchCount || !reveal || !next) return;
     const focusedOption = document.activeElement && document.activeElement.classList.contains('sr-sp-option')
       ? Array.from(options.children).indexOf(document.activeElement)
       : -1;
@@ -1251,11 +1271,13 @@
     const game = samePage.state;
     if (!game) {
       questionElement.textContent = 'Waiting for the first question';
+      setName.textContent = 'Question set';
       progress.textContent = `Question 1 of ${SAME_PAGE_SET_SIZE}`;
       matchCount.textContent = 'Matches: 0';
       status.textContent = connectedSecurely() ? 'Starting the game together.' : 'The game will begin when both people are connected.';
       return;
     }
+    setName.textContent = SAME_PAGE_QUESTION_SETS[game.setIndex] ? SAME_PAGE_QUESTION_SETS[game.setIndex].name : 'Question set';
     progress.textContent = game.phase === 'complete' ? 'Set complete' : `Question ${game.roundNumber} of ${SAME_PAGE_SET_SIZE}`;
     matchCount.textContent = `Matches: ${game.matchCount}`;
     if (game.phase === 'complete') {
@@ -1263,7 +1285,7 @@
       status.textContent = `${SAME_PAGE_QUESTION_SETS[game.setIndex].name} pack complete. No question repeated.`;
       reveal.hidden = false;
       renderSamePageReveal(reveal, game, null);
-      next.textContent = 'Start a fresh 40-question pack';
+      next.textContent = 'Replay this 40-question set';
       next.hidden = false;
       next.disabled = !connectedSecurely();
       return;
@@ -1923,15 +1945,17 @@
     const watchHome = document.querySelector('#sr-watch-home');
     const gamesHome = document.querySelector('#sr-games-home');
     const samePageButton = document.querySelector('#sr-game-same-page');
+    const samePageSet = document.querySelector('#sr-same-page-set');
     const samePageBack = document.querySelector('#sr-sp-back-games');
     const samePageHome = document.querySelector('#sr-sp-home');
     const samePageNext = document.querySelector('#sr-sp-next');
-    if (!watch || !games || !watchHome || !gamesHome || !samePageButton || !samePageBack || !samePageHome || !samePageNext) return;
+    if (!watch || !games || !watchHome || !gamesHome || !samePageButton || !samePageSet || !samePageBack || !samePageHome || !samePageNext) return;
     watch.addEventListener('click', () => requestRoomView('watch'));
     games.addEventListener('click', () => requestRoomView('games'));
     watchHome.addEventListener('click', () => requestRoomView('home'));
     gamesHome.addEventListener('click', () => requestRoomView('home'));
-    samePageButton.addEventListener('click', () => requestGameSelect(SAME_PAGE_GAME));
+    samePageSet.replaceChildren(new Option('Surprise me (random set)', '-1'), ...SAME_PAGE_QUESTION_SETS.map((set, index) => new Option(`${set.name} (40 questions)`, String(index))));
+    samePageButton.addEventListener('click', () => requestGameSelect(SAME_PAGE_GAME, Number(samePageSet.value)));
     samePageBack.addEventListener('click', () => requestGameSelect(''));
     samePageHome.addEventListener('click', () => requestRoomView('home'));
     samePageNext.addEventListener('click', requestSamePageAdvance);
