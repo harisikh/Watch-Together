@@ -1,0 +1,8 @@
+{
+  "decks": 16,
+  "questions": 320,
+  "questionsPerDeck": 20,
+  "uniqueQuestions": 320,
+  "uniqueAnswerSets": 320,
+  "drawingWords": 700
+}

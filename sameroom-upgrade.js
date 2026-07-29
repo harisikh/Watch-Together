@@ -71,15 +71,15 @@
   const SAME_PAGE_QUESTION_SETS = Object.freeze(
     Object.entries((window.SAME_ROOM_CONTENT && window.SAME_ROOM_CONTENT.questionSets) || {})
       .map(([name, questions]) => Object.freeze({ name, questions: Object.freeze(questions.map(question => Object.freeze({ q: String(question.q), a: Object.freeze([...question.a]) }))) }))
-      .filter(set => set.questions.length === 40)
+      .filter(set => set.questions.length === 20)
   );
-  const SAME_PAGE_SET_SIZE = 40;
+  const SAME_PAGE_SET_SIZE = 20;
   const SAME_PAGE_QUESTIONS = Object.freeze(SAME_PAGE_QUESTION_SETS.flatMap(set => set.questions));
   const normalizeContentText = value => String(value).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
   const seenQuestionTexts = new Set();
   const seenAnswerSets = new Set();
   for (const set of SAME_PAGE_QUESTION_SETS) {
-    if (set.questions.length !== SAME_PAGE_SET_SIZE) throw new Error(`Question set ${set.name} must contain exactly 40 questions.`);
+    if (set.questions.length !== SAME_PAGE_SET_SIZE) throw new Error(`Question set ${set.name} must contain exactly 20 questions.`);
     for (const question of set.questions) {
       const questionKey = normalizeContentText(question.q);
       const answerKey = question.a.map(normalizeContentText).sort().join('|');
@@ -90,8 +90,8 @@
       seenAnswerSets.add(answerKey);
     }
   }
-  if (SAME_PAGE_QUESTIONS.length < 500 || SAME_PAGE_QUESTIONS.length > 600 || SAME_PAGE_QUESTIONS.length % SAME_PAGE_SET_SIZE !== 0) {
-    throw new Error('Same Room requires 500 to 600 questions in complete 40-question packs.');
+  if (SAME_PAGE_QUESTIONS.length !== 320 || SAME_PAGE_QUESTIONS.length % SAME_PAGE_SET_SIZE !== 0) {
+    throw new Error('Same Room requires exactly 320 questions in complete 20-question decks.');
   }
 
 
@@ -1285,7 +1285,7 @@
       status.textContent = `${SAME_PAGE_QUESTION_SETS[game.setIndex].name} pack complete. No question repeated.`;
       reveal.hidden = false;
       renderSamePageReveal(reveal, game, null);
-      next.textContent = 'Replay this 40-question set';
+      next.textContent = 'Replay this 20-question deck';
       next.hidden = false;
       next.disabled = !connectedSecurely();
       return;
@@ -1954,7 +1954,7 @@
     games.addEventListener('click', () => requestRoomView('games'));
     watchHome.addEventListener('click', () => requestRoomView('home'));
     gamesHome.addEventListener('click', () => requestRoomView('home'));
-    samePageSet.replaceChildren(new Option('Surprise me (random set)', '-1'), ...SAME_PAGE_QUESTION_SETS.map((set, index) => new Option(`${set.name} (40 questions)`, String(index))));
+    samePageSet.replaceChildren(new Option('Surprise me (random set)', '-1'), ...SAME_PAGE_QUESTION_SETS.map((set, index) => new Option(`${set.name} (20 questions)`, String(index))));
     samePageButton.addEventListener('click', () => requestGameSelect(SAME_PAGE_GAME, Number(samePageSet.value)));
     samePageBack.addEventListener('click', () => requestGameSelect(''));
     samePageHome.addEventListener('click', () => requestRoomView('home'));
