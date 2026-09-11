@@ -8,8 +8,8 @@
 (() => {
   'use strict';
 
-  if (typeof state === 'undefined' || typeof Peer === 'undefined' || typeof $ === 'undefined') {
-    console.error('Same Room upgrade must load after the original Same Room script and PeerJS.');
+  if (typeof state === 'undefined' || typeof $ === 'undefined') {
+    console.error('Same Room upgrade must load after the original Same Room script.');
     return;
   }
 
@@ -30,6 +30,7 @@
     peerRestartAttempt: 0,
     restartingPeer: false,
     connecting: false,
+    mediaReady: false,
     healthTimer: null,
     playbackTimer: null,
     lastPong: 0,
@@ -139,6 +140,8 @@
   const ROOM_VIEWS = new Set(['home', 'watch', 'games']);
   const GAME_MESSAGE_TYPES = new Set(['game-select', 'game-state', 'game-input', 'game-reset']);
   const RECONNECT_DELAYS = [1000, 1800, 3000, 5000, 8000, 12000];
+  const CONNECTION_OPEN_TIMEOUT_MS = 14000;
+  const PEER_OPEN_TIMEOUT_MS = 16000;
 
   function bytesToBase64Url(bytes) {
     let binary = '';
@@ -618,6 +621,15 @@
 
   function setConnectionStatus(text, mode = 'wait') {
     setStatus(text, mode);
+    const status = document.querySelector('#status');
+    if (status) {
+      status.title = text;
+      status.setAttribute('aria-label', `Connection status: ${text}`);
+    }
+    const homeStatus = document.querySelector('#sr-home-status');
+    if (homeStatus && upgrade.roomView === 'home' && !connectedSecurely()) {
+      homeStatus.textContent = text.charAt(0).toUpperCase() + text.slice(1);
+    }
   }
 
   function updateChatConnectionState() {
@@ -713,9 +725,12 @@
       if (control) control.disabled = !enabled;
     });
     const status = document.querySelector('#sr-home-status');
+    const connected = connectedSecurely();
     if (status) status.textContent = enabled
       ? 'You are connected. Choose together.'
-      : (navigator.onLine ? 'Waiting for the secure connection.' : 'Offline. Reconnect to choose an activity.');
+      : connected
+        ? `Connected securely. ${state.theirName || 'The room host'} will choose an activity.`
+        : (navigator.onLine ? 'Waiting for the secure connection.' : 'Offline. Reconnect to choose an activity.');
     renderSamePage();
     renderDrawing();
   }
@@ -2033,7 +2048,7 @@
       upgrade.sending = upgrade.sending.then(() => sendCurrentRoomView()).catch(() => {});
     }
 
-    if (state.isHost) setModeControlsEnabled(true);
+    setModeControlsEnabled(state.isHost);
     setConnectionStatus(upgrade.rtt == null ? 'connected securely' : `connected • ${upgrade.rtt} ms`, 'live');
     if (!state.isHost && samePage.state) {
       samePage.commitSentFor = '';
@@ -2051,7 +2066,7 @@
 
   function answerPendingCall() {
     const call = upgrade.pendingCall;
-    if (!call || !upgrade.authorizedPeer || call.peer !== upgrade.authorizedPeer) return;
+    if (!call || !upgrade.mediaReady || !upgrade.authorizedPeer || call.peer !== upgrade.authorizedPeer) return;
     clearTimeout(call._sameRoomTimeout);
     upgrade.pendingCall = null;
     try {
@@ -2081,7 +2096,7 @@
     call._sameRoomTimeout = setTimeout(() => {
       if (upgrade.pendingCall === call) upgrade.pendingCall = null;
       try { call.close(); } catch (error) {}
-    }, 12000);
+    }, 45000);
   }
 
   function clearConnectionTimers() {
@@ -2144,6 +2159,10 @@
 
   function schedulePeerRestart(reason = 'restarting secure connection…') {
     if (upgrade.intentionallyLeaving || !state.onStage || upgrade.restartingPeer) return;
+    if (state.conn && state.conn.open) {
+      setConnectionStatus(upgrade.rtt == null ? 'connected securely' : `connected • ${upgrade.rtt} ms`, 'live');
+      return;
+    }
     clearTimeout(upgrade.peerRestartTimer);
     setConnectionStatus(reason, 'wait');
     updateChatConnectionState();
@@ -2152,6 +2171,12 @@
     upgrade.peerRestartTimer = setTimeout(() => {
       if (upgrade.intentionallyLeaving || !state.onStage) return;
       upgrade.restartingPeer = true;
+      upgrade.connecting = false;
+      if (state.conn && !state.conn.open) {
+        clearTimeout(state.conn._sameRoomOpenTimeout);
+        try { state.conn.close(); } catch (error) {}
+        state.conn = null;
+      }
       try {
         if (state.peer && !state.peer.destroyed) state.peer.destroy();
       } catch (error) {}
@@ -2170,6 +2195,12 @@
     }
     if (state.peer.disconnected) {
       try { state.peer.reconnect(); } catch (error) {}
+      scheduleReconnect('restoring signalling…');
+      return;
+    }
+    if (!state.peer.open) {
+      scheduleReconnect('waiting for secure signalling…');
+      return;
     }
     try {
       upgrade.connecting = true;
@@ -2179,6 +2210,13 @@
         metadata: { v: VERSION }
       });
       wireConn(conn);
+      conn._sameRoomOpenTimeout = setTimeout(() => {
+        if (conn.open || upgrade.intentionallyLeaving) return;
+        upgrade.connecting = false;
+        if (state.conn === conn) state.conn = null;
+        try { conn.close(); } catch (error) {}
+        scheduleReconnect('connection timed out, trying again…');
+      }, CONNECTION_OPEN_TIMEOUT_MS);
     } catch (error) {
       upgrade.connecting = false;
       scheduleReconnect();
@@ -2204,6 +2242,7 @@
     updateChatConnectionState();
 
     conn.on('open', () => {
+      clearTimeout(conn._sameRoomOpenTimeout);
       upgrade.connecting = false;
       upgrade.lastPong = Date.now();
       conn._sameRoomAuthTimeout = setTimeout(() => {
@@ -2259,6 +2298,7 @@
     });
 
     conn.on('close', () => {
+      clearTimeout(conn._sameRoomOpenTimeout);
       upgrade.connecting = false;
       clearTimeout(conn._sameRoomAuthTimeout);
       upgrade.pendingConnections.delete(conn);
@@ -2287,8 +2327,14 @@
     });
 
     conn.on('error', () => {
+      clearTimeout(conn._sameRoomOpenTimeout);
       upgrade.connecting = false;
-      if (state.conn === conn) setConnectionStatus('connection error, recovering…', 'wait');
+      if (state.conn === conn) {
+        state.conn = null;
+        setConnectionStatus('connection error, recovering…', 'wait');
+        try { conn.close(); } catch (error) {}
+        if (!state.isHost) scheduleReconnect('connection error, trying again…');
+      }
     });
   };
 
@@ -2317,8 +2363,14 @@
         iceCandidatePoolSize: 4
       }
     });
+    peer._sameRoomOpenTimeout = setTimeout(() => {
+      if (peer.open || peer.destroyed || upgrade.intentionallyLeaving) return;
+      if (!asHost) upgrade.connecting = false;
+      schedulePeerRestart('secure signalling timed out, retrying…');
+    }, PEER_OPEN_TIMEOUT_MS);
 
     peer.on('open', () => {
+      clearTimeout(peer._sameRoomOpenTimeout);
       upgrade.reconnectAttempt = 0;
       upgrade.peerRestartAttempt = 0;
       if (asHost) setConnectionStatus('secure room open, share the room and password', 'wait');
@@ -2329,7 +2381,12 @@
     peer.on('call', call => receiveCall(call));
 
     peer.on('disconnected', () => {
+      clearTimeout(peer._sameRoomOpenTimeout);
       if (upgrade.intentionallyLeaving || peer.destroyed) return;
+      if (state.conn && state.conn.open) {
+        try { peer.reconnect(); } catch (error) {}
+        return;
+      }
       setConnectionStatus('signalling interrupted, recovering…', 'wait');
       setTimeout(() => {
         if (peer.disconnected && !peer.destroyed) {
@@ -2337,17 +2394,21 @@
         }
       }, 1200);
       setTimeout(() => {
-        if (peer.disconnected && !peer.destroyed) schedulePeerRestart('signalling did not recover, restarting…');
+        if (peer.disconnected && !peer.destroyed && (!state.conn || !state.conn.open)) {
+          schedulePeerRestart('signalling did not recover, restarting…');
+        }
       }, 5000);
     });
 
     peer.on('close', () => {
+      clearTimeout(peer._sameRoomOpenTimeout);
       if (!upgrade.intentionallyLeaving && !upgrade.restartingPeer) {
         schedulePeerRestart('secure connection closed, restarting…');
       }
     });
 
     peer.on('error', error => {
+      clearTimeout(peer._sameRoomOpenTimeout);
       const type = error && error.type ? error.type : '';
       if (type === 'unavailable-id') {
         if (asHost && upgrade.peerRestartAttempt > 0) {
@@ -2357,6 +2418,13 @@
           toast('That secure room is already open. Use Join.');
         }
       } else if (type === 'peer-unavailable') {
+        upgrade.connecting = false;
+        if (state.conn && !state.conn.open) {
+          const failedConnection = state.conn;
+          state.conn = null;
+          clearTimeout(failedConnection._sameRoomOpenTimeout);
+          try { failedConnection.close(); } catch (closeError) {}
+        }
         scheduleReconnect('room not open yet, or the password differs…');
       } else if (type === 'webrtc') {
         setConnectionStatus('direct connection failed, retrying…', 'wait');
@@ -2396,6 +2464,16 @@
     if (password.length < 10) {
       toast('Use a room password with at least 10 characters.');
       if (passwordInput) passwordInput.focus();
+      return;
+    }
+    if (typeof Peer === 'undefined') {
+      setEntrySecurityStatus('The connection service did not load. Check your internet and reload the page.');
+      toast('The connection service did not load. Please reload.');
+      return;
+    }
+    if (window.isSecureContext === false) {
+      setEntrySecurityStatus('Open this page over HTTPS to create a private room.');
+      toast('A private room needs a secure HTTPS page.');
       return;
     }
     if (!window.crypto || !window.crypto.subtle) {
@@ -2444,11 +2522,19 @@
     applyRoomView('home', upgrade.roomViewVersion);
     setModeControlsEnabled(false);
     updateNameLabels();
-    setConnectionStatus(asHost ? `waiting for ${otherLabel()}…` : 'connecting securely…', 'wait');
+    setConnectionStatus(asHost ? 'opening secure room…' : 'connecting securely…', 'wait');
     initTiles();
 
-    await getMedia();
+    upgrade.mediaReady = false;
+    const mediaRequest = getMedia();
     state.peer = createPeer(asHost);
+    try {
+      await mediaRequest;
+    } finally {
+      upgrade.mediaReady = true;
+      answerPendingCall();
+      if (!state.isHost && connectedSecurely()) startGuestMediaCall();
+    }
   };
 
   function injectEntrySecurity() {
